@@ -1,0 +1,16 @@
+version: '3.8'
+
+services:
+  stock-fund-monitor:
+    image: dazhangwei/stock-fund-ai-monitor:latest
+    container_name: stock-fund-monitor
+    restart: unless-stopped
+    ports:
+      - "8888:8888"
+    environment:
+      - TZ=Asia/Shanghai
+      - PORT=8888
+      - ADMIN_USERNAME=admin
+      - ADMIN_PASSWORD=admin123456
+    volumes:
+      - ./data:/app/data

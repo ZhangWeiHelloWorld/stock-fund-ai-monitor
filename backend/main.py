@@ -32,8 +32,15 @@ app.include_router(settings.router)
 app.include_router(wxwork.router)
 
 # Mount static frontend (must be last)
-frontend_dist = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "frontend", "dist")
-if os.path.exists(frontend_dist):
+frontend_dist_candidates = [
+    os.environ.get("FRONTEND_DIST"),
+    os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "frontend", "dist"),
+    os.path.join(os.path.dirname(os.path.abspath(__file__)), "frontend", "dist"),
+    "/app/frontend/dist"
+]
+frontend_dist = next((p for p in frontend_dist_candidates if p and os.path.exists(p)), None)
+
+if frontend_dist and os.path.exists(frontend_dist):
     # Serve SPA: catch-all fallback to index.html
     app.mount("/assets", StaticFiles(directory=os.path.join(frontend_dist, "assets")), name="assets")
 
@@ -55,10 +62,11 @@ from services.market_service import auto_fix_fund_names_in_db
 
 @app.on_event("startup")
 async def on_startup():
+    port = os.environ.get("PORT", "8888")
     print("="*50)
     print("  股票基金监控系统 启动完成")
-    print("  访问地址: http://0.0.0.0:8888")
-    print("  企业微信接收: http://<服务器IP>:8888/swx/receive")
+    print(f"  访问地址: http://0.0.0.0:{port}")
+    print(f"  企业微信接收: http://<服务器IP>:{port}/swx/receive")
     print("="*50)
     await auto_fix_fund_names_in_db()
     start_scheduler()
@@ -69,4 +77,6 @@ async def on_shutdown():
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run("main:app", host="0.0.0.0", port=8888, reload=False)
+    host = os.environ.get("HOST", "0.0.0.0")
+    port = int(os.environ.get("PORT", 8888))
+    uvicorn.run("main:app", host=host, port=port, reload=False)

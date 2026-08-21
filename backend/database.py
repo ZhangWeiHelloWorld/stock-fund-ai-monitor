@@ -4,8 +4,9 @@ from datetime import datetime
 import json
 import hashlib
 
-DB_PATH = os.path.join(os.path.dirname(__file__), "lh.db")
-ADMIN_CONFIG_PATH = os.path.join(os.path.dirname(__file__), "admin_config.json")
+DATA_DIR = os.environ.get("DATA_DIR", os.path.dirname(__file__))
+DB_PATH = os.environ.get("DB_PATH", os.path.join(DATA_DIR, "lh.db"))
+ADMIN_CONFIG_PATH = os.environ.get("ADMIN_CONFIG_PATH", os.path.join(DATA_DIR, "admin_config.json"))
 
 def hash_password(password: str, salt: bytes = None) -> str:
     if salt is None:
@@ -25,10 +26,14 @@ def verify_password(stored_password_hash: str, provided_password: str) -> bool:
         return False
 
 def get_admin_config():
+    default_username = os.environ.get("ADMIN_USERNAME", "admin")
+    default_password = os.environ.get("ADMIN_PASSWORD", "admin123456")
+    
+    os.makedirs(os.path.dirname(os.path.abspath(ADMIN_CONFIG_PATH)), exist_ok=True)
     if not os.path.exists(ADMIN_CONFIG_PATH):
         config = {
-            "username": "admin",
-            "password": "admin123456"
+            "username": default_username,
+            "password": default_password
         }
         with open(ADMIN_CONFIG_PATH, "w", encoding="utf-8") as f:
             json.dump(config, f, ensure_ascii=False, indent=2)
@@ -37,12 +42,13 @@ def get_admin_config():
         with open(ADMIN_CONFIG_PATH, "r", encoding="utf-8") as f:
             config = json.load(f)
             if "username" not in config or "password" not in config:
-                config = {"username": "admin", "password": "admin123456"}
+                config = {"username": default_username, "password": default_password}
             return config
     except Exception:
-        return {"username": "admin", "password": "admin123456"}
+        return {"username": default_username, "password": default_password}
 
 def update_admin_config_file(username: str, password: str):
+    os.makedirs(os.path.dirname(os.path.abspath(ADMIN_CONFIG_PATH)), exist_ok=True)
     config = {
         "username": username,
         "password": password
@@ -51,6 +57,7 @@ def update_admin_config_file(username: str, password: str):
         json.dump(config, f, ensure_ascii=False, indent=2)
 
 def get_db():
+    os.makedirs(os.path.dirname(os.path.abspath(DB_PATH)), exist_ok=True)
     conn = sqlite3.connect(DB_PATH, check_same_thread=False)
     conn.row_factory = sqlite3.Row
     try:
@@ -59,6 +66,7 @@ def get_db():
         conn.close()
 
 def init_db():
+    os.makedirs(os.path.dirname(os.path.abspath(DB_PATH)), exist_ok=True)
     conn = sqlite3.connect(DB_PATH)
     conn.row_factory = sqlite3.Row
     cursor = conn.cursor()

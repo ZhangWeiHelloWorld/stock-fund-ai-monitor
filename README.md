@@ -1,6 +1,7 @@
 # 📈 Stock & Fund AI Monitor (股票与基金实时监控与 AI 智能预警推送系统)
 
 <p align="center">
+  <img src="https://img.shields.io/badge/Docker-Multi--Arch-2496ED?style=flat-square&logo=docker" alt="Docker" />
   <img src="https://img.shields.io/badge/Vue-3.x-4FC08D?style=flat-square&logo=vue.js" alt="Vue 3" />
   <img src="https://img.shields.io/badge/FastAPI-0.100+-009688?style=flat-square&logo=fastapi" alt="FastAPI" />
   <img src="https://img.shields.io/badge/Python-3.9+-3776AB?style=flat-square&logo=python" alt="Python 3.9+" />
@@ -151,7 +152,79 @@ chmod +x start.sh
 
 ## 🚢 生产环境部署
 
-### 方式一：一键远程自动化部署脚本（推荐）
+### 方式一：Docker 容器化部署（推荐）
+
+本项目已发布原生支持 **x86_64 (amd64)** 与 **ARM64 (arm64)** 架构的多架构官方镜像，开箱即用。
+
+#### 1. 快速单行启动
+```bash
+docker run -d \
+  --name stock-fund-monitor \
+  -p 8888:8888 \
+  -v $(pwd)/data:/app/data \
+  -e TZ=Asia/Shanghai \
+  --restart unless-stopped \
+  dazhangwei/stock-fund-ai-monitor:latest
+```
+
+#### 2. 自定义参数启动
+```bash
+docker run -d \
+  --name stock-fund-monitor \
+  -p 9000:9000 \
+  -v /opt/stock-monitor/data:/app/data \
+  -e PORT=9000 \
+  -e TZ=Asia/Shanghai \
+  -e ADMIN_USERNAME=admin \
+  -e ADMIN_PASSWORD=your_password \
+  --restart unless-stopped \
+  dazhangwei/stock-fund-ai-monitor:latest
+```
+
+#### 3. 使用 Docker Compose 一键启动
+在项目根目录下或任意目录创建 `docker-compose.yml`：
+```yaml
+version: '3.8'
+
+services:
+  stock-fund-monitor:
+    image: dazhangwei/stock-fund-ai-monitor:latest
+    container_name: stock-fund-monitor
+    restart: unless-stopped
+    ports:
+      - "8888:8888"
+    environment:
+      - TZ=Asia/Shanghai
+      - PORT=8888
+      - ADMIN_USERNAME=admin
+      - ADMIN_PASSWORD=admin123456
+    volumes:
+      - ./data:/app/data
+```
+
+启动与管理：
+```bash
+docker compose up -d       # 后台启动
+docker compose logs -f     # 查看运行日志
+docker compose down        # 停止服务
+```
+
+#### 4. Docker 运行时环境变量配置表
+
+| 环境变量 | 默认值 | 说明 |
+| :--- | :--- | :--- |
+| `PORT` | `8888` | 服务监听的 HTTP 端口 |
+| `HOST` | `0.0.0.0` | 服务监听的主机地址 |
+| `TZ` | `Asia/Shanghai` | 容器时区（保证 A 股交易时间与推送调度精准） |
+| `DATA_DIR` | `/app/data` | 数据持久化目录（存储 SQLite `lh.db` 及配置） |
+| `DB_PATH` | `/app/data/lh.db` | SQLite 数据库文件绝对路径 |
+| `ADMIN_CONFIG_PATH` | `/app/data/admin_config.json` | 管理员配置文件存储路径 |
+| `ADMIN_USERNAME` | `admin` | 首次初始化创建的管理员登录用户名 |
+| `ADMIN_PASSWORD` | `admin123456` | 首次初始化创建的管理员登录密码 |
+
+---
+
+### 方式二：一键远程自动化部署脚本
 1. 复制部署配置文件模板：
    ```bash
    cp deploy_config.json.example deploy_config.json
@@ -170,7 +243,7 @@ chmod +x start.sh
    python3 remote_deploy.py
    ```
 
-### 方式二：Systemd 生产守护进程
+### 方式三：Systemd 生产守护进程
 参考完整的 [部署指南 (deploy.md)](deploy.md) 进行配置。
 
 ---
@@ -189,7 +262,7 @@ chmod +x start.sh
 - [ ] **K线图表与技术指标预警**：集成 Lightweight Charts / ECharts，支持 MACD / KDJ / 均线金叉死叉预警。
 - [ ] **行业板块与热点图谱**：A 股行业板块涨跌排行、资金净流入流出热力图。
 - [ ] **智能网格与模拟回测**：支持预设网格挂单策略模拟与收益回测分析。
-- [ ] **容器化支持**：提供 Dockerfile 与 `docker-compose.yml` 一键编排方案。
+- [x] **容器化支持**：提供 Dockerfile 与 `docker-compose.yml` 一键编排及多架构自动构建方案。
 
 ---
 

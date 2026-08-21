@@ -1,0 +1,16 @@
+.git
+.github
+node_modules
+frontend/node_modules
+frontend/dist
+backend/venv
+backend/__pycache__
+backend/**/*.pyc
+backend/*.db
+backend/admin_config.json
+data
+scratch
+*.zip
+*.log
+.DS_Store
+deploy_config.json

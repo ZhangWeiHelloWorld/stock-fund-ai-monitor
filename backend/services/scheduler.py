@@ -10,7 +10,9 @@ from datetime import datetime
 import asyncio
 import re
 
-scheduler = AsyncIOScheduler()
+import os
+
+scheduler = AsyncIOScheduler(timezone=os.environ.get("TZ", "Asia/Shanghai"))
 last_push_time = None
 last_morning_review_date = {}
 last_afternoon_review_date = {}
