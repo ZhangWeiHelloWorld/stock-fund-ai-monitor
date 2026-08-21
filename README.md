@@ -87,7 +87,7 @@
 
 #### 1. 克隆代码库
 ```bash
-git clone https://github.com/your-username/stock-fund-ai-monitor.git
+git clone https://github.com/ZhangWeiHelloWorld/stock-fund-ai-monitor.git
 cd stock-fund-ai-monitor
 ```
 
