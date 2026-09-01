@@ -4,6 +4,7 @@ import { createRouter, createWebHistory } from 'vue-router'
 import Dashboard from './views/Dashboard.vue'
 import Stocks from './views/Stocks.vue'
 import Funds from './views/Funds.vue'
+import Strategies from './views/Strategies.vue'
 import Settings from './views/Settings.vue'
 import Login from './views/Login.vue'
 import './style.css'
@@ -13,6 +14,7 @@ const routes = [
   { path: '/', component: Dashboard, name: 'Dashboard' },
   { path: '/stocks', component: Stocks, name: 'Stocks' },
   { path: '/funds', component: Funds, name: 'Funds' },
+  { path: '/strategies', component: Strategies, name: 'Strategies' },
   { path: '/settings', component: Settings, name: 'Settings' }
 ]
 

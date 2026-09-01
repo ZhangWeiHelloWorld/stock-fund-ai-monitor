@@ -29,6 +29,68 @@
     </div>
 
     <template v-else-if="marketData">
+      <!-- Market Indices Overview -->
+      <div v-if="marketIndices && marketIndices.length" class="glass-card mb-4 indices-section">
+        <div class="section-header">
+          <div class="section-title-group">
+            <h3>🏛️ 大盘指数</h3>
+            <span v-if="totalMarketTurnover" class="market-turnover-tag">
+              两市/全市场成交额: <strong>{{ totalMarketTurnover }}</strong>
+            </span>
+          </div>
+          <div class="indices-actions">
+            <button class="btn btn-glass btn-sm" @click="showAllIndices = !showAllIndices" :title="showAllIndices ? '收起仅显示4大核心指数' : '展开显示全部指数'">
+              {{ showAllIndices ? '收起 (核心4指)' : '全部指数 (' + marketIndices.length + ')' }}
+            </button>
+          </div>
+        </div>
+
+        <div class="indices-grid">
+          <div 
+            v-for="idx in displayIndices" 
+            :key="idx.code" 
+            class="index-card"
+            :class="[getIndexChangeClass(idx.change_pct)]"
+          >
+            <div class="index-top">
+              <div class="index-name-wrap">
+                <span class="index-name">{{ idx.name }}</span>
+                <span class="index-symbol">{{ idx.symbol }}</span>
+              </div>
+              <span class="index-badge" :class="idx.change_pct >= 0 ? 'badge-up' : 'badge-down'">
+                {{ idx.change_pct >= 0 ? '▲' : '▼' }} {{ formatIndexChange(idx.change_pct) }}%
+              </span>
+            </div>
+
+            <div class="index-points" :class="colorClass(idx.change_pct)">
+              {{ idx.current > 0 ? idx.current.toFixed(2) : '-' }}
+            </div>
+
+            <div class="index-change-row">
+              <span class="index-change-amount" :class="colorClass(idx.change_amount)">
+                {{ idx.change_amount > 0 ? '+' : '' }}{{ idx.change_amount != null ? idx.change_amount.toFixed(2) : '-' }}
+              </span>
+              <span class="index-turnover" title="成交额">
+                成交 {{ idx.amount_formatted }}
+              </span>
+            </div>
+
+            <!-- 日内波动进度条 -->
+            <div class="index-range-bar-wrap" :title="`最低: ${idx.low > 0 ? idx.low.toFixed(2) : '-'} / 最高: ${idx.high > 0 ? idx.high.toFixed(2) : '-'} / 振幅: ${idx.amplitude ? idx.amplitude.toFixed(2) + '%' : '-'}`">
+              <div class="range-labels">
+                <span>低 {{ idx.low > 0 ? idx.low.toFixed(2) : '-' }}</span>
+                <span class="amplitude-label">振幅 {{ idx.amplitude ? idx.amplitude.toFixed(2) + '%' : '-' }}</span>
+                <span>高 {{ idx.high > 0 ? idx.high.toFixed(2) : '-' }}</span>
+              </div>
+              <div class="range-track">
+                <div class="range-fill" :style="{ width: getIndexRangePercent(idx) + '%' }" :class="idx.change_pct >= 0 ? 'fill-up' : 'fill-down'"></div>
+                <div class="range-marker" :style="{ left: getIndexRangePercent(idx) + '%' }"></div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
       <!-- History Chart -->
       <div class="glass-card mb-4 history-chart-container">
         <div class="section-header">
@@ -728,6 +790,45 @@ const toggleShowAmount = () => {
   }
 }
 
+// 大盘核心指数状态与计算
+const showAllIndices = ref(false)
+const marketIndices = computed(() => marketData.value?.indices || [])
+const displayIndices = computed(() => {
+  if (showAllIndices.value) return marketIndices.value
+  return marketIndices.value.slice(0, 4)
+})
+
+const totalMarketTurnover = computed(() => {
+  const indices = marketIndices.value
+  if (!indices || !indices.length) return null
+  const sh = indices.find(i => i.code === 'sh000001')?.amount || 0
+  const sz = indices.find(i => i.code === 'sz399001')?.amount || 0
+  const bj = indices.find(i => i.code === 'bj899050')?.amount || 0
+  const total = sh + sz + bj
+  if (total <= 0) return null
+  if (total >= 100000000) {
+    return (total / 100000000).toFixed(2) + ' 亿元'
+  }
+  return (total / 10000).toFixed(2) + ' 万元'
+})
+
+const getIndexRangePercent = (idx) => {
+  if (!idx || !idx.high || !idx.low || idx.high === idx.low) return 50
+  const pct = ((idx.current - idx.low) / (idx.high - idx.low)) * 100
+  return Math.max(0, Math.min(100, pct))
+}
+
+const getIndexChangeClass = (pct) => {
+  if (pct == null || pct === 0) return 'index-flat'
+  return pct > 0 ? 'index-up' : 'index-down'
+}
+
+const formatIndexChange = (pct) => {
+  if (pct == null) return '0.00'
+  const num = Number(pct)
+  return (num >= 0 ? '+' : '') + num.toFixed(2)
+}
+
 // 排序状态
 const stockSortKey = ref('default')
 const stockSortOrder = ref('desc')
@@ -1312,4 +1413,195 @@ onUnmounted(() => {
 }
 
 .countdown { margin-left: 8px; color: var(--accent-primary); }
+
+/* Market Indices Section */
+.indices-section {
+  padding: 20px 24px;
+}
+
+.market-turnover-tag {
+  font-size: 0.82rem;
+  color: var(--text-secondary);
+  background: rgba(255, 255, 255, 0.05);
+  padding: 4px 10px;
+  border-radius: 8px;
+  border: 1px solid var(--border-glass);
+}
+.market-turnover-tag strong {
+  color: var(--accent-primary);
+  font-weight: 600;
+}
+
+.btn-sm {
+  padding: 4px 10px;
+  font-size: 0.82rem;
+}
+
+.indices-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 16px;
+}
+
+.index-card {
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 12px;
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  transition: all 0.25s ease;
+  position: relative;
+  overflow: hidden;
+}
+
+.index-card:hover {
+  transform: translateY(-2px);
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.index-card.index-up {
+  border-left: 3px solid var(--red);
+}
+.index-card.index-up:hover {
+  box-shadow: 0 6px 20px rgba(255, 68, 68, 0.15);
+}
+
+.index-card.index-down {
+  border-left: 3px solid var(--green);
+}
+.index-card.index-down:hover {
+  box-shadow: 0 6px 20px rgba(0, 255, 136, 0.15);
+}
+
+.index-card.index-flat {
+  border-left: 3px solid var(--text-secondary);
+}
+
+.index-top {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.index-name-wrap {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.index-name {
+  font-weight: 600;
+  font-size: 0.96rem;
+  color: var(--text-primary);
+}
+
+.index-symbol {
+  font-size: 0.72rem;
+  color: var(--text-secondary);
+  font-family: monospace;
+  background: rgba(255, 255, 255, 0.06);
+  padding: 1px 5px;
+  border-radius: 4px;
+}
+
+.index-badge {
+  font-size: 0.75rem;
+  font-weight: 600;
+  padding: 2px 8px;
+  border-radius: 8px;
+  white-space: nowrap;
+}
+
+.index-badge.badge-up {
+  background: rgba(255, 68, 68, 0.15);
+  color: var(--red);
+  border: 1px solid rgba(255, 68, 68, 0.3);
+}
+
+.index-badge.badge-down {
+  background: rgba(0, 255, 136, 0.15);
+  color: var(--green);
+  border: 1px solid rgba(0, 255, 136, 0.3);
+}
+
+.index-points {
+  font-size: 1.55rem;
+  font-weight: 700;
+  font-family: monospace;
+  letter-spacing: -0.5px;
+  margin-top: -2px;
+}
+
+.index-change-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 0.82rem;
+}
+
+.index-change-amount {
+  font-weight: 600;
+  font-family: monospace;
+}
+
+.index-turnover {
+  font-size: 0.78rem;
+  color: var(--text-secondary);
+}
+
+.index-range-bar-wrap {
+  margin-top: 4px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.range-labels {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 0.72rem;
+  color: var(--text-secondary);
+}
+
+.amplitude-label {
+  color: var(--accent-primary);
+  opacity: 0.85;
+}
+
+.range-track {
+  height: 4px;
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: 2px;
+  position: relative;
+  overflow: visible;
+}
+
+.range-fill {
+  height: 100%;
+  border-radius: 2px;
+  transition: width 0.3s ease;
+}
+
+.fill-up {
+  background: linear-gradient(90deg, rgba(255, 68, 68, 0.3), var(--red));
+}
+
+.fill-down {
+  background: linear-gradient(90deg, rgba(0, 255, 136, 0.3), var(--green));
+}
+
+.range-marker {
+  position: absolute;
+  top: -3px;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: #fff;
+  box-shadow: 0 0 6px rgba(255, 255, 255, 0.8);
+  transform: translateX(-50%);
+  pointer-events: none;
+}
 </style>

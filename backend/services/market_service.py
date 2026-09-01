@@ -2,6 +2,7 @@ import httpx
 import re
 import json
 import sqlite3
+import asyncio
 import datetime as dt
 from database import DB_PATH
 from datetime import datetime
@@ -83,6 +84,139 @@ async def fetch_stock_data(codes: list) -> dict:
     except Exception as e:
         print(f"[MarketService] Error fetching stock data: {e}")
         return {}
+
+
+DEFAULT_MARKET_INDICES = [
+    {"code": "sh000001", "symbol": "000001", "name": "上证指数", "market": "SH"},
+    {"code": "sz399001", "symbol": "399001", "name": "深证成指", "market": "SZ"},
+    {"code": "sz399006", "symbol": "399006", "name": "创业板指", "market": "SZ"},
+    {"code": "sh000688", "symbol": "000688", "name": "科创50", "market": "SH"},
+    {"code": "sh000300", "symbol": "000300", "name": "沪深300", "market": "SH"},
+    {"code": "bj899050", "symbol": "899050", "name": "北证50", "market": "BJ"},
+]
+
+
+def _format_turnover(amount: float) -> str:
+    """Format turnover amount into human-friendly string (e.g. 7248.95亿 or 8500.20万)."""
+    if not amount or amount <= 0:
+        return "-"
+    if amount >= 100_000_000:
+        return f"{amount / 100_000_000:.2f}亿"
+    elif amount >= 10_000:
+        return f"{amount / 10_000:.2f}万"
+    return f"{amount:.2f}"
+
+
+async def fetch_market_indices(index_list: list = None) -> list:
+    """Fetch real-time data for market indices (上证指数, 深证成指, 创业板指, 科创50, 沪深300, 北证50等)."""
+    if index_list is None:
+        index_list = DEFAULT_MARKET_INDICES
+
+    codes = [item["code"] for item in index_list]
+    url = f"http://hq.sinajs.cn/list={','.join(codes)}"
+    headers = {
+        "Referer": "http://finance.sina.com.cn/",
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
+    }
+
+    raw_data = {}
+    try:
+        async with httpx.AsyncClient(timeout=10) as client:
+            resp = await client.get(url, headers=headers)
+            text = resp.content.decode('gbk', errors='replace')
+            for line in text.strip().split('\n'):
+                match = re.search(r'var hq_str_(.*?)="(.*?)";', line)
+                if match:
+                    code = match.group(1)
+                    raw_data[code] = match.group(2)
+    except Exception as e:
+        print(f"[MarketService] Error fetching market indices: {e}")
+
+    indices_result = []
+    for item in index_list:
+        code = item["code"]
+        symbol = item.get("symbol", code)
+        fallback_name = item.get("name", code)
+        market = item.get("market", "SH")
+
+        data_str = raw_data.get(code, "")
+        if data_str:
+            fields = data_str.split(',')
+            if len(fields) > 30:
+                name = fields[0] if fields[0] else fallback_name
+                open_price = float(fields[1]) if fields[1] else 0.0
+                prev_close = float(fields[2]) if fields[2] else 0.0
+                current = float(fields[3]) if fields[3] else 0.0
+                high = float(fields[4]) if fields[4] else 0.0
+                low = float(fields[5]) if fields[5] else 0.0
+                volume = float(fields[8]) if len(fields) > 8 and fields[8] else 0.0
+                amount = float(fields[9]) if len(fields) > 9 and fields[9] else 0.0
+                update_date = fields[30] if len(fields) > 30 else ""
+                update_time = fields[31] if len(fields) > 31 else ""
+
+                real_current = current
+                if real_current <= 0:
+                    if open_price > 0:
+                        real_current = open_price
+                    elif prev_close > 0:
+                        real_current = prev_close
+
+                if current <= 0 and open_price <= 0:
+                    change_pct = 0.0
+                    change_amount = 0.0
+                elif current <= 0 and open_price > 0:
+                    change_pct = (open_price - prev_close) / prev_close * 100 if prev_close > 0 else 0.0
+                    change_amount = open_price - prev_close
+                else:
+                    change_pct = (current - prev_close) / prev_close * 100 if prev_close > 0 else 0.0
+                    change_amount = current - prev_close
+
+                # 日内振幅
+                amplitude = (high - low) / prev_close * 100 if (prev_close > 0 and high > 0 and low > 0) else 0.0
+
+                indices_result.append({
+                    "code": code,
+                    "symbol": symbol,
+                    "name": name,
+                    "market": market,
+                    "current": real_current,
+                    "open": open_price,
+                    "prev_close": prev_close,
+                    "high": high,
+                    "low": low,
+                    "change_amount": change_amount,
+                    "change_pct": change_pct,
+                    "amplitude": amplitude,
+                    "volume": volume,
+                    "amount": amount,
+                    "amount_formatted": _format_turnover(amount),
+                    "update_time": update_time,
+                    "update_date": update_date
+                })
+                continue
+
+        # Fallback if failed to fetch
+        indices_result.append({
+            "code": code,
+            "symbol": symbol,
+            "name": fallback_name,
+            "market": market,
+            "current": 0.0,
+            "open": 0.0,
+            "prev_close": 0.0,
+            "high": 0.0,
+            "low": 0.0,
+            "change_amount": 0.0,
+            "change_pct": 0.0,
+            "amplitude": 0.0,
+            "volume": 0.0,
+            "amount": 0.0,
+            "amount_formatted": "-",
+            "update_time": "",
+            "update_date": ""
+        })
+
+    return indices_result
 
 
 def _determine_fund_nav_status(update_time: str, now: datetime = None) -> tuple:
@@ -290,12 +424,15 @@ async def get_market_overview(user_id: int = 1) -> dict:
 
     conn.close()
 
-    # Fetch market data
+    # Fetch market data concurrently
     sina_codes = [format_stock_code(s['code']) for s in stocks]
-    stock_market_data = await fetch_stock_data(sina_codes)
-
     fund_codes = [f['code'] for f in funds]
-    fund_market_data = await fetch_fund_data(fund_codes)
+
+    stock_market_data, fund_market_data, indices_data = await asyncio.gather(
+        fetch_stock_data(sina_codes),
+        fetch_fund_data(fund_codes),
+        fetch_market_indices()
+    )
 
     total_day_profit = 0.0
     total_profit = 0.0
@@ -419,6 +556,7 @@ async def get_market_overview(user_id: int = 1) -> dict:
     return {
         "stocks": enriched_stocks,
         "funds": enriched_funds,
+        "indices": indices_data,
         "summary": {
             "total_day_profit": total_day_profit,
             "total_profit": total_profit,

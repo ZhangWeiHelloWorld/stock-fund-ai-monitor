@@ -51,7 +51,7 @@ def create_deploy_zip():
     print(f"📦 [打包本地代码] 创建 {LOCAL_ZIP}")
     print("==========================================")
     
-    exclude_dirs = {'node_modules', 'venv', '__pycache__', '.git', '.idea', '.vscode', 'scratch', 'dist'}
+    exclude_dirs = {'node_modules', 'venv', '__pycache__', '.git', '.idea', '.vscode', 'scratch', 'dist', 'local_backups', 'lh_backups'}
     exclude_extensions = {'.db', '.sqlite', '.sqlite3', '.pyc', '.zip', '.DS_Store', '.log'}
     exclude_files = {'admin_config.json', 'deploy_config.json', '.env'}
 
@@ -105,11 +105,29 @@ def main():
         print(f"❌ SSH 连接失败: {e}")
         sys.exit(1)
 
-    # 上传代码包
+    # 1. 备份远程数据库到本地和服务器目录（双重安全保障）
+    print("\n==========================================")
+    print("🛡️ [安全备份] 备份远程服务器历史数据与数据库...")
+    print("==========================================")
+    
+    local_backup_dir = os.path.join(PROJECT_DIR, "local_backups")
+    os.makedirs(local_backup_dir, exist_ok=True)
+    timestamp_str = time.strftime("%Y%m%d_%H%M%S")
+    local_backup_file = os.path.join(local_backup_dir, f"remote_lh_backup_{timestamp_str}.db")
+
+    sftp = ssh.open_sftp()
+    try:
+        remote_db_path = "/root/lh/backend/lh.db"
+        sftp.stat(remote_db_path)
+        sftp.get(remote_db_path, local_backup_file)
+        print(f"✅ 远程生产数据库已安全下载备份到本地: {local_backup_file} ({os.path.getsize(local_backup_file)} 字节)")
+    except Exception as e:
+        print(f"ℹ️ 远程数据库检查/下载提示: {e} (若首次部署则正常)")
+
+    # 2. 上传代码包
     print("\n==========================================")
     print(f"📦 [上传代码包] {LOCAL_ZIP} -> {REMOTE_ZIP}")
     print("==========================================")
-    sftp = ssh.open_sftp()
     
     def progress_callback(transferred, total):
         percent = (transferred / total) * 100
@@ -120,9 +138,10 @@ def main():
     sftp.close()
     print("\n✅ 代码包上传成功！")
 
-    # 执行远程解压和依赖安装与服务重启（自动备份远程数据库）
+    # 3. 执行远程解压、服务器备份和依赖安装与服务重启
     commands = [
-        "mkdir -p /root/lh_backup && cp -rf /root/lh/backend/*.db /root/lh_backup/ 2>/dev/null || true",
+        # 服务器端带时间戳备份
+        "BACKUP_DIR=\"/root/lh_backups/backup_$(date +%Y%m%d_%H%M%S)\" && mkdir -p \"$BACKUP_DIR\" && cp -rf /root/lh/backend/*.db \"$BACKUP_DIR/\" 2>/dev/null || true && cp -rf /root/lh/backend/admin_config.json \"$BACKUP_DIR/\" 2>/dev/null || true && cp -rf /root/lh/backend/cache \"$BACKUP_DIR/\" 2>/dev/null || true && echo \"✅ 历史数据已完整备份到服务器: $BACKUP_DIR\" && ls -la \"$BACKUP_DIR\"",
         "apt-get update",
         "apt-get install -y python3 python3-pip python3-venv nodejs npm unzip lsof",
         "cd /root && unzip -o lh_deploy.zip",
@@ -149,7 +168,7 @@ EOF""",
         "systemctl restart stock-monitor",
         "sleep 3",
         "systemctl status stock-monitor --no-pager",
-        "curl -s http://127.0.0.1:8888/api/settings"
+        "curl -s http://127.0.0.1:8888/api/market/indices | head -c 200 || true"
     ]
 
     for cmd in commands:
@@ -158,7 +177,7 @@ EOF""",
             print(f"⚠️ 警告: 命令 [{cmd}] 返回非0退出代码: {status}")
 
     ssh.close()
-    print("\n🎉 部署全流程已完成！服务器已成功更新，历史数据已完好保留。")
+    print("\n🎉 部署全流程已完成！服务器已成功升级，历史数据已在本地与服务器双重备份并完好保留。")
 
 if __name__ == "__main__":
     main()

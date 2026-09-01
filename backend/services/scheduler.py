@@ -219,9 +219,38 @@ async def check_and_push():
             await format_and_push_message(user_id=uid)
 
 
+async def check_and_notify_strategy_signals():
+    now = datetime.now()
+    if not is_trading_day(now):
+        return
+    try:
+        from services.strategy.strategy_service import scan_strategy_signals
+        conn = sqlite3.connect(DB_PATH)
+        cursor = conn.cursor()
+        cursor.execute("SELECT id FROM users")
+        user_rows = cursor.fetchall()
+        conn.close()
+
+        for urow in user_rows:
+            uid = urow[0]
+            sigs = await scan_strategy_signals(user_id=uid)
+            if sigs and now.hour == 14 and now.minute in (30, 45):
+                settings = get_settings_dict(user_id=uid)
+                if settings.get('push_enabled', True):
+                    msg_lines = ["⚡【基金策略买卖信号提醒】", "━━━━━━━━━━━━━━━━", f"📅 时间: {now.strftime('%H:%M:%S')}"]
+                    for s in sigs:
+                        msg_lines.append(f"• {s['target_name']}({s['target_code']})")
+                        msg_lines.append(f"  {s['reason']}")
+                    msg_lines.append("\n💡 提示：基金 15:00 前申赎按今日收盘净值确认，请及时在支付宝或平台操作。")
+                    send_wxwork_message("\n".join(msg_lines), user_id=uid)
+    except Exception as e:
+        print(f"[Scheduler] Error checking strategy signals: {e}")
+
+
 def start_scheduler():
     scheduler.add_job(check_and_push, 'cron', minute='*')
     scheduler.add_job(check_and_trigger_stock_alerts, 'interval', seconds=30)
+    scheduler.add_job(check_and_notify_strategy_signals, 'cron', minute='*/5')
     scheduler.start()
 
 def stop_scheduler():

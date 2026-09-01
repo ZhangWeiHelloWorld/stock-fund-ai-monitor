@@ -72,6 +72,20 @@ def format_holdings_summary(overview: dict, session_name: str = "持仓概览") 
         ""
     ]
 
+    indices = overview.get('indices', [])
+    if indices:
+        lines.append("🏛️ 大盘核心指数行情:")
+        for idx in indices:
+            idx_name = idx.get('name', '')
+            idx_current = idx.get('current', 0.0)
+            idx_change_pct = idx.get('change_pct', 0.0)
+            idx_change_amount = idx.get('change_amount', 0.0)
+            idx_turnover = idx.get('amount_formatted', '-')
+            lines.append(
+                f"- {idx_name}: {idx_current:.2f} ({idx_change_pct:+.2f}%, {idx_change_amount:+.2f}点), 成交额: {idx_turnover}"
+            )
+        lines.append("")
+
     stocks = overview.get('stocks', [])
     holding_stocks = [s for s in stocks if s.get('is_holding')]
     if holding_stocks:

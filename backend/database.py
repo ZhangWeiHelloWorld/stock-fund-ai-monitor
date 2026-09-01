@@ -273,6 +273,12 @@ def init_db():
     conn.commit()
     conn.close()
 
+    try:
+        from services.strategy.strategy_service import init_strategy_tables
+        init_strategy_tables()
+    except Exception as e:
+        print(f"[DB] Error initializing strategy tables: {e}")
+
 def init_user_default_settings(user_id: int):
     default_settings = {
         'wxwork_corpid': '',

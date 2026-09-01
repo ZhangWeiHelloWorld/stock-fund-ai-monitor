@@ -26,6 +26,10 @@
             <span class="icon">💰</span>
             <span class="text">基金管理</span>
           </router-link>
+          <router-link to="/strategies" class="nav-item">
+            <span class="icon">🎯</span>
+            <span class="text">买卖策略</span>
+          </router-link>
           <router-link to="/settings" class="nav-item">
             <span class="icon">⚙️</span>
             <span class="text">系统设置</span>

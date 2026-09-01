@@ -1,8 +1,13 @@
 from fastapi import APIRouter, Depends
-from services.market_service import get_market_overview
+from services.market_service import get_market_overview, fetch_market_indices
 from routers.auth import get_current_user
 
 router = APIRouter(prefix="/api/market", tags=["market"])
+
+@router.get("/indices")
+async def market_indices(current_user: dict = Depends(get_current_user)):
+    indices = await fetch_market_indices()
+    return indices
 
 @router.get("/overview")
 async def market_overview(current_user: dict = Depends(get_current_user)):
