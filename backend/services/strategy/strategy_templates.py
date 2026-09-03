@@ -174,6 +174,9 @@ PRESET_TEMPLATES = [
             "cumulative_profit_target_pct": 15.0,
             "cumulative_profit_sell_ratio": 0.5,
             "cumulative_reset_on_sell": True,
+            "enable_lot_profit_take": True,
+            "lot_profit_take_pct": 3.0,
+            "lot_profit_sell_ratio": 1.0,
             "stop_loss_pct": 10.0,
             "buy_cooldown_days": 0,
             "sell_cooldown_days": 0

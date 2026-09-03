@@ -562,20 +562,53 @@ async def scan_strategy_signals(user_id: int) -> List[Dict[str, Any]]:
                         suggested_amt = round(max_buyback_s * cur_nav, 2)
                         signal_reason = f"【做T回踩低吸接回】{reason_detail}，建议买入接回 {suggested_shares:.0f} 股（约 ¥{suggested_amt:.0f}，买回上限 ≤ 今日已卖出 {tot_sold_s:.0f}股）"
 
-            # 4. Surge High-Sell (分时冲高做T)
-            elif free_t_shares >= 100:
-                surge_p = round(avg_cost * (1 + t_surge_pct / 100.0), 2)
-                if (cur_nav >= surge_p or change_pct >= t_surge_pct):
-                    target_s = min(t_sell_shares_cfg, free_t_shares)
+            # 4. Lot-by-lot Profit Taking (逐批次独立止盈做T：卖出比此前买入价涨幅达标的对应股数，严格T+1)
+            elif bool(cfg.get("enable_lot_profit_take", True)) and free_t_shares >= 100:
+                lot_profit_th = float(cfg.get("lot_profit_take_pct", 3.0))
+                lot_sell_r = float(cfg.get("lot_profit_sell_ratio", 1.0))
+                cursor.execute(
+                    "SELECT * FROM strategy_trades WHERE strategy_id = ? AND action = 'BUY' AND trade_date < ? ORDER BY trade_date DESC",
+                    (sid, today_str)
+                )
+                prior_buys = [dict(r) for r in cursor.fetchall()]
+                
+                matched_buy = None
+                matched_gain = 0.0
+                for pb in prior_buys:
+                    p_price = float(pb.get("nav_or_price", 0.0))
+                    if p_price > 0:
+                        gain = (cur_nav - p_price) / p_price * 100.0
+                        if gain >= lot_profit_th:
+                            matched_buy = pb
+                            matched_gain = gain
+                            break
+                
+                if matched_buy:
+                    lot_s = float(matched_buy.get("shares", 0.0))
+                    target_s = min(lot_s * lot_sell_r, free_t_shares)
                     target_s = int(target_s / 100) * 100
                     if target_s >= 100:
                         signal_action = "SELL"
                         suggested_shares = float(target_s)
                         suggested_amt = round(target_s * cur_nav, 2)
-                        up_pct = (cur_nav - avg_cost) / avg_cost * 100.0 if avg_cost > 0 else change_pct
-                        signal_reason = f"【分时冲高高抛做T】当前分时价 ¥{cur_nav:.2f}（今日涨幅 +{change_pct:.2f}%），较持仓成本 ¥{avg_cost:.2f} 涨幅达到 +{up_pct:.2f}% (≥ +{t_surge_pct}%)，建议做T高抛卖出 {suggested_shares:.0f} 股（约 ¥{suggested_amt:.0f}）"
+                        buy_d = matched_buy.get("trade_date", "前次")
+                        buy_p = float(matched_buy.get("nav_or_price", 0.0))
+                        signal_reason = f"【批次独立做T止盈】当前股价 ¥{cur_nav:.2f} 较 {buy_d} 买入批次成本价 ¥{buy_p:.2f} 涨幅达到 +{matched_gain:.2f}% (≥ +{lot_profit_th}%)，满足T+1可卖条件，建议卖出对应 {suggested_shares:.0f} 股锁定价差收益（约 ¥{suggested_amt:.0f}）"
 
-            # 5. Multi-tier Dip Buy if large drop
+                # 5. Surge High-Sell (分时冲高做T)
+                if not signal_action and free_t_shares >= 100:
+                    surge_p = round(avg_cost * (1 + t_surge_pct / 100.0), 2)
+                    if (cur_nav >= surge_p or change_pct >= t_surge_pct):
+                        target_s = min(t_sell_shares_cfg, free_t_shares)
+                        target_s = int(target_s / 100) * 100
+                        if target_s >= 100:
+                            signal_action = "SELL"
+                            suggested_shares = float(target_s)
+                            suggested_amt = round(target_s * cur_nav, 2)
+                            up_pct = (cur_nav - avg_cost) / avg_cost * 100.0 if avg_cost > 0 else change_pct
+                            signal_reason = f"【分时冲高高抛做T】当前分时价 ¥{cur_nav:.2f}（今日涨幅 +{change_pct:.2f}%），较持仓成本 ¥{avg_cost:.2f} 涨幅达到 +{up_pct:.2f}% (≥ +{t_surge_pct}%)，建议做T高抛卖出 {suggested_shares:.0f} 股（约 ¥{suggested_amt:.0f}）"
+
+            # 6. Multi-tier Dip Buy if large drop
             if not signal_action and change_pct <= 0:
                 raw_buy = cfg.get("buy_tiers")
                 if raw_buy and isinstance(raw_buy, list):

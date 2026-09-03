@@ -529,17 +529,49 @@ def run_backtest(
                         trade_reason = f"累计收益达标阶段止盈 (本轮浮盈 +{cum_profit_pct:.2f}% ≥ 目标 {target_profit_th}%)"
 
                 else:
-                    # 3. High Surge T-Sell (分时冲高高抛)
-                    surge_trigger_price = round(round_base_cost_nav * (1 + t_surge_pct / 100.0), 2)
-                    if day_high >= surge_trigger_price and free_t_shares >= 100:
-                        trade_action = "SELL"
-                        target_t_sell = min(t_sell_shares_cfg, free_t_shares)
-                        target_t_sell = int(target_t_sell / 100) * 100
-                        sell_ratio = target_t_sell / cur_shares if cur_shares > 0 else 0.0
-                        reset_this_trade = reset_on_sell
-                        trade_reason = f"【做T高抛】分时冲高 (最高达 ¥{day_high:.2f} ≥ 触发价 ¥{surge_trigger_price:.2f}，涨幅 ≥ +{t_surge_pct}%)"
+                    # 3. Lot-by-lot Profit Taking (逐批次独立止盈做T：卖出比此前买入价涨幅达标的对应股数，严格T+1)
+                    enable_lot_profit_take = bool(cfg.get("enable_lot_profit_take", True))
+                    lot_profit_th = float(cfg.get("lot_profit_take_pct", 3.0))
+                    lot_sell_r = float(cfg.get("lot_profit_sell_ratio", 1.0))
+                    
+                    matched_lot_idx = []
+                    matched_lot_sell_shares = 0.0
+                    if enable_lot_profit_take and free_t_shares >= 100:
+                        for l_idx, lot in enumerate(holding_lots):
+                            if lot["buy_date"] < cur_date:  # Strictly T+1
+                                cost_p = float(lot.get("cost_nav", 0.0))
+                                if cost_p > 0:
+                                    gain_pct = (cur_nav - cost_p) / cost_p * 100.0
+                                    if gain_pct >= lot_profit_th:
+                                        s_to_sell = int(lot["shares"] * lot_sell_r / 100) * 100
+                                        if s_to_sell >= 100:
+                                            matched_lot_idx.append(l_idx)
+                                            matched_lot_sell_shares += s_to_sell
 
-                    # 4. Multi-tier Dip Buying (大跌阶梯加仓) if no sell triggered
+                    if matched_lot_idx and matched_lot_sell_shares >= 100 and free_t_shares >= 100:
+                        target_t_sell = min(matched_lot_sell_shares, int(free_t_shares / 100) * 100)
+                        if target_t_sell >= 100:
+                            trade_action = "SELL"
+                            sell_ratio = target_t_sell / cur_shares if cur_shares > 0 else 0.0
+                            reset_this_trade = reset_on_sell
+                            # Prioritize matched profitable lots to be sold first
+                            holding_lots = [holding_lots[i] for i in matched_lot_idx] + [holding_lots[i] for i in range(len(holding_lots)) if i not in matched_lot_idx]
+                            first_matched = holding_lots[0]
+                            first_gain = (cur_nav - first_matched['cost_nav']) / first_matched['cost_nav'] * 100.0
+                            trade_reason = f"【批次独立做T止盈】当前价 ¥{cur_nav:.2f} 较 {first_matched['buy_date']} 买入价 ¥{first_matched['cost_nav']:.2f} 涨幅达 +{first_gain:.2f}% (≥ +{lot_profit_th}%)，满足T+1，卖出对应 {target_t_sell:.0f} 股锁定利润"
+
+                    # 4. High Surge T-Sell (分时冲高高抛)
+                    elif free_t_shares >= 100:
+                        surge_trigger_price = round(round_base_cost_nav * (1 + t_surge_pct / 100.0), 2)
+                        if day_high >= surge_trigger_price:
+                            trade_action = "SELL"
+                            target_t_sell = min(t_sell_shares_cfg, free_t_shares)
+                            target_t_sell = int(target_t_sell / 100) * 100
+                            sell_ratio = target_t_sell / cur_shares if cur_shares > 0 else 0.0
+                            reset_this_trade = reset_on_sell
+                            trade_reason = f"【做T高抛】分时冲高 (最高达 ¥{day_high:.2f} ≥ 触发价 ¥{surge_trigger_price:.2f}，涨幅 ≥ +{t_surge_pct}%)"
+
+                    # 5. Multi-tier Dip Buying (大跌阶梯加仓) if no sell triggered
                     elif day_change <= 0 and drop_tiers:
                         actual_drop = -day_change
                         matching_drops = []
@@ -1049,8 +1081,11 @@ def run_backtest(
 
     return {
         "success": True,
+        "asset_type": asset_type,
         "fund_code": fund_code,
         "fund_name": fund_name,
+        "target_code": fund_code,
+        "target_name": fund_name,
         "strategy_type": strategy_type,
         "start_date": sorted_history[0]["date"],
         "end_date": sorted_history[-1]["date"],

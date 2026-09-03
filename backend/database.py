@@ -174,6 +174,27 @@ def init_db():
         )
     ''')
 
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS calendar_ai_advice (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER NOT NULL,
+            date TEXT NOT NULL,
+            time_slot TEXT DEFAULT '',
+            session_type TEXT DEFAULT 'intraday',
+            suggestion TEXT NOT NULL,
+            events_summary TEXT,
+            bazi_analysis TEXT,
+            holdings_snapshot TEXT,
+            generated_at TEXT NOT NULL,
+            is_final BOOLEAN DEFAULT 0,
+            verified_status TEXT DEFAULT 'pending',
+            verified_notes TEXT DEFAULT '',
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL
+        )
+    ''')
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_calendar_ai_advice_user_date ON calendar_ai_advice (user_id, date)")
+
     # Migrate existing global settings to user_settings for user_id = 1 (admin)
     cursor.execute("SELECT key, value FROM settings")
     old_settings = cursor.fetchall()
@@ -260,7 +281,55 @@ def init_db():
         'alert_fund_fall_pct': '-2.0',
         'alert_fund_swing_enabled': 'true',
         'alert_fund_swing_minutes': '15',
-        'alert_fund_swing_pct': '1.5'
+        'alert_fund_swing_pct': '1.5',
+        'calendar_birth_date': '1992-06-25',
+        'calendar_birth_time': '07:40',
+        'calendar_calendar_type': 'solar',
+        'calendar_gender': 'male',
+        'calendar_birth_province': '北京市',
+        'calendar_birth_city': '北京市',
+        'calendar_birth_longitude': '116.4',
+        'calendar_true_solar_time': '07:26',
+        'calendar_zodiac': '猴',
+        'calendar_constellation': '巨蟹座',
+        'calendar_wuxing_counts': '{"金": 1, "木": 1, "水": 3, "火": 2, "土": 1}',
+        'calendar_bazi_year': '壬申',
+        'calendar_bazi_month': '丙午',
+        'calendar_bazi_day': '壬辰',
+        'calendar_bazi_hour': '甲辰',
+        'calendar_bazi_day_master': '壬水',
+        'calendar_bazi_favorable': '金, 水, 湿土 (庚辛申酉 / 壬癸亥子 / 辰丑)',
+        'calendar_bazi_unfavorable': '燥土, 烈火, 刑冲 (戊未戌 / 丙午 / 寅申冲 / 辰戌冲)',
+        'calendar_profit_display_mode': 'amount',
+        'calendar_show_metaphysics': 'true',
+        'calendar_show_auspicious': 'true',
+        'calendar_show_shensha': 'true',
+        'calendar_ai_enabled': 'true',
+        'calendar_ai_prompt_template': '''你是一位精通中国传统命理易经五行与现代宏观金融投资的顶级资产配置专家。
+请根据投资者的生辰八字、今日天干地支五行与易经卦象气场，结合投资者当下的实际股票/基金持仓数据以及今日国内外重大金融财经大事，进行全方位的综合复盘研判，并给出今日最终的专业投资操作建议。
+
+【投资者命理信息】：
+{bazi_info}
+
+【今日时空易象】：
+{calendar_day_info}
+
+【投资者当前实际持仓】：
+{stock_holdings}
+{fund_holdings}
+{portfolio_summary}
+
+【今日世界与国内金融重大要闻】：
+{financial_events}
+
+【分析与建议要求】：
+1. ☯️【五行气场与持仓行业共振】：分析今日干支与卦象对投资者日主的生克制化，以及对持仓资产所处行业（半导体科技、新能源/锂电、AI/数字经济等）的五行利弊影响；
+2. 🌍【国内外宏观金融要闻传导】：研判全球资本市场风向及国内政策/大盘资金面变动，对持仓品种产生的利好或利空冲击；
+3. 🎯【今日终极投资操作建议】：明确给出针对当前持仓的具体操作决策（如：逢高止盈减仓、逆势分批低吸、卧倒坚守、防范刑冲洗盘风险等），并给出仓位控制指引；
+4. 🔮【次日/后市关键观察信号】：给出投资者接下来的关键防守位或进攻观察点。
+
+排版要求：
+- 请使用清晰工整的段落与 Emoji（如 ☯️、📊、🌍、🎯、🔮、🛡️、💡），语言专业有力、逻辑严密、切中要害，便于随时复盘核验。'''
     }
 
     cursor.execute("SELECT id FROM users")
@@ -360,7 +429,54 @@ def init_user_default_settings(user_id: int):
         'alert_fund_fall_pct': '-2.0',
         'alert_fund_swing_enabled': 'true',
         'alert_fund_swing_minutes': '15',
-        'alert_fund_swing_pct': '1.5'
+        'alert_fund_swing_pct': '1.5',
+        'calendar_birth_date': '1992-06-25',
+        'calendar_birth_time': '07:40',
+        'calendar_calendar_type': 'solar',
+        'calendar_gender': 'male',
+        'calendar_birth_province': '北京市',
+        'calendar_birth_city': '北京市',
+        'calendar_birth_longitude': '116.4',
+        'calendar_true_solar_time': '07:26',
+        'calendar_zodiac': '猴',
+        'calendar_constellation': '巨蟹座',
+        'calendar_wuxing_counts': '{"金": 1, "木": 1, "水": 3, "火": 2, "土": 1}',
+        'calendar_bazi_year': '壬申',
+        'calendar_bazi_month': '丙午',
+        'calendar_bazi_day': '壬辰',
+        'calendar_bazi_hour': '甲辰',
+        'calendar_bazi_day_master': '壬水',
+        'calendar_bazi_favorable': '金, 水, 湿土 (庚辛申酉 / 壬癸亥子 / 辰丑)',
+        'calendar_bazi_unfavorable': '燥土, 烈火, 刑冲 (戊未戌 / 丙午 / 寅申冲 / 辰戌冲)',
+        'calendar_profit_display_mode': 'amount',
+        'calendar_show_metaphysics': 'true',
+        'calendar_show_auspicious': 'true',
+        'calendar_ai_enabled': 'true',
+        'calendar_ai_prompt_template': '''你是一位精通中国传统命理易经五行与现代宏观金融投资的顶级资产配置专家。
+请根据投资者的生辰八字、今日天干地支五行与易经卦象气场，结合投资者当下的实际股票/基金持仓数据以及今日国内外重大金融财经大事，进行全方位的综合复盘研判，并给出今日最终的专业投资操作建议。
+
+【投资者命理信息】：
+{bazi_info}
+
+【今日时空易象】：
+{calendar_day_info}
+
+【投资者当前实际持仓】：
+{stock_holdings}
+{fund_holdings}
+{portfolio_summary}
+
+【今日世界与国内金融重大要闻】：
+{financial_events}
+
+【分析与建议要求】：
+1. ☯️【五行气场与持仓行业共振】：分析今日干支与卦象对投资者日主的生克制化，以及对持仓资产所处行业（半导体科技、新能源/锂电、AI/数字经济等）的五行利弊影响；
+2. 🌍【国内外宏观金融要闻传导】：研判全球资本市场风向及国内政策/大盘资金面变动，对持仓品种产生的利好或利空冲击；
+3. 🎯【今日终极投资操作建议】：明确给出针对当前持仓的具体操作决策（如：逢高止盈减仓、逆势分批低吸、卧倒坚守、防范刑冲洗盘风险等），并给出仓位控制指引；
+4. 🔮【次日/后市关键观察信号】：给出投资者接下来的关键防守位或进攻观察点。
+
+排版要求：
+- 请使用清晰工整的段落与 Emoji（如 ☯️、📊、🌍、🎯、🔮、🛡️、💡），语言专业有力、逻辑严密、切中要害，便于随时复盘核验。'''
     }
     conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()

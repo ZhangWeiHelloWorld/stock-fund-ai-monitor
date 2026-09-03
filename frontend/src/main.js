@@ -2,6 +2,7 @@ import { createApp } from 'vue'
 import App from './App.vue'
 import { createRouter, createWebHistory } from 'vue-router'
 import Dashboard from './views/Dashboard.vue'
+import Calendar from './views/Calendar.vue'
 import Stocks from './views/Stocks.vue'
 import Funds from './views/Funds.vue'
 import Strategies from './views/Strategies.vue'
@@ -12,6 +13,7 @@ import './style.css'
 const routes = [
   { path: '/login', component: Login, name: 'Login' },
   { path: '/', component: Dashboard, name: 'Dashboard' },
+  { path: '/calendar', component: Calendar, name: 'Calendar' },
   { path: '/stocks', component: Stocks, name: 'Stocks' },
   { path: '/funds', component: Funds, name: 'Funds' },
   { path: '/strategies', component: Strategies, name: 'Strategies' },

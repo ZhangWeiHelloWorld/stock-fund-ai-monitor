@@ -97,5 +97,47 @@ class SettingsUpdate(BaseModel):
     alert_fund_swing_enabled: Optional[bool] = None
     alert_fund_swing_minutes: Optional[int] = None
     alert_fund_swing_pct: Optional[float] = None
+    calendar_birth_date: Optional[str] = None
+    calendar_birth_time: Optional[str] = None
+    calendar_calendar_type: Optional[str] = None
+    calendar_gender: Optional[str] = None
+    calendar_birth_province: Optional[str] = None
+    calendar_birth_city: Optional[str] = None
+    calendar_birth_longitude: Optional[float] = None
+    calendar_true_solar_time: Optional[str] = None
+    calendar_zodiac: Optional[str] = None
+    calendar_constellation: Optional[str] = None
+    calendar_wuxing_counts: Optional[str] = None
+    calendar_bazi_year: Optional[str] = None
+    calendar_bazi_month: Optional[str] = None
+    calendar_bazi_day: Optional[str] = None
+    calendar_bazi_hour: Optional[str] = None
+    calendar_bazi_day_master: Optional[str] = None
+    calendar_bazi_favorable: Optional[str] = None
+    calendar_bazi_unfavorable: Optional[str] = None
+    calendar_profit_display_mode: Optional[str] = None
+    calendar_show_metaphysics: Optional[bool] = None
+    calendar_show_auspicious: Optional[bool] = None
+    calendar_show_shensha: Optional[bool] = None
+    calendar_ai_enabled: Optional[bool] = None
+    calendar_ai_prompt_template: Optional[str] = None
 
+class CalculateBaziRequest(BaseModel):
+    birth_date: str # YYYY-MM-DD
+    birth_time: Optional[str] = "12:00" # HH:MM
+    calendar_type: Optional[str] = "solar" # 'solar' or 'lunar'
+    gender: Optional[str] = "male" # 'male' or 'female'
+    province: Optional[str] = "北京市"
+    city: Optional[str] = "北京市"
+    is_leap_month: Optional[bool] = False
+    lunar_year: Optional[int] = None
+    lunar_month: Optional[int] = None
+    lunar_day: Optional[int] = None
 
+class VerifyAdviceRequest(BaseModel):
+    verified_status: str # 'pending', 'accurate', 'partial', 'divergent'
+    verified_notes: Optional[str] = ""
+
+class GenerateAiAdviceRequest(BaseModel):
+    date: Optional[str] = None # defaults to today if omitted
+    time_slot: Optional[str] = None # '早盘' / '午盘' / '收盘' / '盘后' / '前瞻推演'

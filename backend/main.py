@@ -6,7 +6,7 @@ from fastapi.responses import FileResponse
 from database import init_db
 from services.scheduler import start_scheduler, stop_scheduler
 
-from routers import stocks, funds, market, settings, wxwork, auth, admin, strategies
+from routers import stocks, funds, market, settings, wxwork, auth, admin, strategies, calendar
 
 app = FastAPI(title="股票基金监控系统 API", version="1.0.0")
 
@@ -30,6 +30,7 @@ app.include_router(funds.router)
 app.include_router(strategies.router)
 app.include_router(market.router)
 app.include_router(settings.router)
+app.include_router(calendar.router)
 app.include_router(wxwork.router)
 
 # Mount static frontend (must be last)

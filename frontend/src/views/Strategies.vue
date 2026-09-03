@@ -918,10 +918,41 @@
                   </div>
                 </div>
 
-                <!-- 3. 大跌/大涨多档阶梯加减仓 -->
+                <!-- 3. 逐批次买入独立止盈做T -->
                 <div class="tier-section-block mt-3">
                   <div class="tier-header">
-                    <strong>📊 3. 多档位大跌加仓与极端暴涨减仓</strong>
+                    <strong>📦 3. 逐批次独立止盈做T (比前次买入价涨幅达标即卖出对应数量)</strong>
+                  </div>
+                  <div class="form-row grid-3 mt-2">
+                    <div class="form-group">
+                      <label>是否开启逐批次独立止盈</label>
+                      <select class="form-control" v-model="form.config.enable_lot_profit_take">
+                        <option :value="true">✅ 开启 (严格T+1，达标即卖出该批次)</option>
+                        <option :value="false">🚫 关闭 (仅按总持仓成本做T)</option>
+                      </select>
+                      <span class="help-text">遵循A股T+1，低吸批次独立核算止盈</span>
+                    </div>
+                    <div class="form-group" v-if="form.config.enable_lot_profit_take !== false">
+                      <label>较买入价涨幅达标阈值 (%)</label>
+                      <input type="number" step="0.1" class="form-control" v-model.number="form.config.lot_profit_take_pct" placeholder="如: 3.0" />
+                      <span class="help-text">股价较历史加仓买入价涨幅达到该比例触发止盈</span>
+                    </div>
+                    <div class="form-group" v-if="form.config.enable_lot_profit_take !== false">
+                      <label>达标批次卖出比例</label>
+                      <select class="form-control" v-model="form.config.lot_profit_sell_ratio">
+                        <option :value="1.0">卖出该批次全部股数 (100%)</option>
+                        <option :value="0.5">卖出该批次半数 (50%)</option>
+                        <option :value="0.3333">卖出该批次 1/3 (33%)</option>
+                      </select>
+                      <span class="help-text">自动按 100 股整手向下取整卖出</span>
+                    </div>
+                  </div>
+                </div>
+
+                <!-- 4. 大跌/大涨多档阶梯加减仓 -->
+                <div class="tier-section-block mt-3">
+                  <div class="tier-header">
+                    <strong>📊 4. 多档位大跌加仓与极端暴涨减仓</strong>
                     <div class="btn-group-sm">
                       <button type="button" class="btn btn-sm btn-glass" @click="addDropTier">+ 下跌加仓档</button>
                       <button type="button" class="btn btn-sm btn-glass" @click="addSurgeTier">+ 暴涨减仓档</button>
@@ -1012,10 +1043,10 @@
                   </div>
                 </div>
 
-                <!-- 4. 阶段目标止盈与成本摊薄重置 -->
+                <!-- 5. 阶段目标止盈与成本摊薄重置 -->
                 <div class="tier-section-block mt-3">
                   <div class="tier-header">
-                    <strong>🎯 4. 全局目标止盈与做T成本摊薄重置</strong>
+                    <strong>🎯 5. 全局目标止盈与做T成本摊薄重置</strong>
                   </div>
                   <div class="form-row grid-3 mt-2">
                     <div class="form-group">
@@ -1282,9 +1313,9 @@
       <div class="modal-content modal-xl">
         <div class="modal-header">
           <div class="header-with-tag">
-            <h3>📊 策略量化回测工作台</h3>
+            <h3>{{ btForm.asset_type === 'stock' ? '📈 股票量化策略回测工作台' : '💰 基金量化策略回测工作台' }}</h3>
             <span v-if="btResult" class="bt-summary-tag">
-              标的：{{ btResult.fund_name }} ({{ btResult.fund_code }}) · {{ btResult.total_days }} 交易日
+              标的：{{ btResult.fund_name || btResult.target_name }} ({{ btResult.fund_code || btResult.target_code }}) · {{ btResult.total_days }} 交易日
             </span>
           </div>
           <button class="close-btn" @click="closeBacktestModal">×</button>
@@ -1378,7 +1409,7 @@
                   class="btn-tag"
                   :class="{ active: btDateRangeTag === 'all' }"
                   @click="setQuickDateRange('all')"
-                >成立以来</button>
+                >{{ btForm.asset_type === 'stock' ? '上市以来' : '成立以来' }}</button>
                 <button
                   type="button"
                   class="btn-tag"
@@ -1418,7 +1449,7 @@
           <!-- Loading State -->
           <div v-if="btLoading" class="bt-loading-card glass-card">
             <div class="spinner"></div>
-            <p>正在拉取全量历史净值并逐日演算交易指令与扣除阶梯手续费...</p>
+            <p>正在拉取全量历史行情并逐日演算交易指令与扣除手续费...</p>
           </div>
 
           <!-- Backtest Results Presentation -->
@@ -1476,7 +1507,7 @@
                   ¥{{ btResult.metrics.total_fees_paid }}
                 </div>
                 <div class="card-footnote">
-                  申购 ¥{{ btResult.metrics.subscription_fees }} / 赎回 ¥{{ btResult.metrics.redemption_fees }}
+                  {{ (btResult.asset_type === 'stock' || btForm.asset_type === 'stock') ? '买入佣金' : '申购' }} ¥{{ btResult.metrics.subscription_fees }} / {{ (btResult.asset_type === 'stock' || btForm.asset_type === 'stock') ? '卖出税费' : '赎回' }} ¥{{ btResult.metrics.redemption_fees }}
                 </div>
               </div>
 
@@ -1494,12 +1525,12 @@
             <!-- ECharts Timeseries Chart -->
             <div class="glass-card chart-card">
               <div class="chart-header">
-                <h4>📈 策略净值收益曲线 vs 基金基准对比 (带买卖触发点)</h4>
+                <h4>📈 策略{{ (btResult.asset_type === 'stock' || btForm.asset_type === 'stock') ? '收益率曲线 vs 股票' : '净值收益曲线 vs 基金' }}基准对比 (带买卖触发点)</h4>
                 <div class="chart-legend">
                   <span class="legend-item"><span class="dot line-strat"></span>策略累计收益率</span>
-                  <span class="legend-item"><span class="dot line-bm"></span>基金买入持有基准</span>
+                  <span class="legend-item"><span class="dot line-bm"></span>{{ (btResult.asset_type === 'stock' || btForm.asset_type === 'stock') ? '股票买入持有基准' : '基金买入持有基准' }}</span>
                   <span class="legend-item"><span class="badge-dot buy"></span>加仓买入点</span>
-                  <span class="legend-item"><span class="badge-dot sell"></span>止盈卖出点</span>
+                  <span class="legend-item"><span class="badge-dot sell"></span>{{ (btResult.asset_type === 'stock' || btForm.asset_type === 'stock') ? '做T/止盈卖出点' : '止盈卖出点' }}</span>
                 </div>
               </div>
               <div ref="chartContainer" class="chart-container"></div>
@@ -1526,10 +1557,10 @@
                       <th>交易日期</th>
                       <th>操作方向</th>
                       <th>触发规则</th>
-                      <th>成交净值</th>
+                      <th>{{ (btResult.asset_type === 'stock' || btForm.asset_type === 'stock') ? '成交价格' : '成交净值' }}</th>
                       <th>当日涨跌幅</th>
                       <th>成交金额 (元)</th>
-                      <th>成交份额</th>
+                      <th>{{ (btResult.asset_type === 'stock' || btForm.asset_type === 'stock') ? '成交股数' : '成交份额' }}</th>
                       <th>扣除手续费</th>
                       <th>持有天数</th>
                       <th>本次盈亏</th>
@@ -1603,9 +1634,9 @@
               <tr>
                 <th>交易时间</th>
                 <th>操作类型</th>
-                <th>成交净值</th>
+                <th>{{ activeStrategyForTrades?.asset_type === 'stock' ? '成交价格' : '成交净值' }}</th>
                 <th>交易金额</th>
-                <th>成交份额</th>
+                <th>{{ activeStrategyForTrades?.asset_type === 'stock' ? '成交股数' : '成交份额' }}</th>
                 <th>手续费</th>
                 <th>持有天数</th>
                 <th>触发原因</th>
@@ -1619,9 +1650,9 @@
                     {{ tr.action_label || tr.action }}
                   </span>
                 </td>
-                <td>{{ tr.nav_or_price.toFixed(4) }}</td>
+                <td>¥{{ tr.nav_or_price.toFixed(activeStrategyForTrades?.asset_type === 'stock' ? 2 : 4) }}</td>
                 <td>¥{{ formatNumber(tr.gross_amount, 2) }}</td>
-                <td>{{ formatNumber(tr.shares, 2) }}</td>
+                <td>{{ formatNumber(tr.shares, activeStrategyForTrades?.asset_type === 'stock' ? 0 : 2) }} {{ activeStrategyForTrades?.asset_type === 'stock' ? '股' : '份' }}</td>
                 <td>¥{{ formatNumber(tr.fee, 2) }}</td>
                 <td>{{ tr.holding_days ? tr.holding_days + '天' : '-' }}</td>
                 <td>{{ tr.trigger_reason }}</td>
@@ -1656,12 +1687,12 @@
           <div class="form-group">
             <label>操作方向</label>
             <div class="badge-direction" :class="executingSignal.action === 'BUY' ? 'buy' : 'sell'">
-              {{ executingSignal.action === 'BUY' ? '🟢 加仓申购' : '🔴 止盈赎回' }}
+              {{ executingSignal.action === 'BUY' ? (executingSignal.asset_type === 'stock' ? '🟢 加仓买入' : '🟢 加仓申购') : (executingSignal.asset_type === 'stock' ? '🔴 减仓卖出' : '🔴 止盈赎回') }}
             </div>
           </div>
 
           <div v-if="executingSignal.action === 'BUY'" class="form-group">
-            <label>实际申购金额 (元)</label>
+            <label>{{ executingSignal.asset_type === 'stock' ? '实际买入金额 (元)' : '实际申购金额 (元)' }}</label>
             <input
               type="number"
               class="form-control"
@@ -1671,7 +1702,7 @@
           </div>
 
           <div v-else class="form-group">
-            <label>实际赎回份额 (份)</label>
+            <label>{{ executingSignal.asset_type === 'stock' ? '实际卖出股数 (股)' : '实际赎回份额 (份)' }}</label>
             <input
               type="number"
               class="form-control"
@@ -1681,15 +1712,15 @@
           </div>
 
           <div class="form-group">
-            <label>成交净值参考</label>
+            <label>{{ executingSignal.asset_type === 'stock' ? '成交价格参考' : '成交净值参考' }}</label>
             <input
               type="number"
-              step="0.0001"
+              :step="executingSignal.asset_type === 'stock' ? '0.01' : '0.0001'"
               class="form-control"
               v-model="executeForm.nav"
               required
             />
-            <span class="help-text">15:00 前操作将按今日官方公布净值最终确认</span>
+            <span class="help-text">{{ executingSignal.asset_type === 'stock' ? 'A股按即时撮合成交价或限价单成交记账' : '15:00 前操作将按今日官方公布净值最终确认' }}</span>
           </div>
 
           <div class="modal-actions">
@@ -1810,13 +1841,13 @@
           <!-- 4. 交易财务与手续费清单 -->
           <div class="detail-card mt-3">
             <div class="detail-card-head" style="margin-bottom: 8px; font-weight: 600; color: var(--text-primary);">
-              <span class="icon">💰</span>
+              <span class="icon">{{ (btResult?.asset_type === 'stock' || btForm.asset_type === 'stock') ? '📈' : '💰' }}</span>
               <strong>交易财务与税费明细</strong>
             </div>
             <div class="grid-metrics-box">
               <div class="metric-cell">
-                <span class="m-lbl">成交股数 / 份额</span>
-                <span class="m-val">{{ formatNumber(selectedBtTrade.shares, 2) }} 股/份</span>
+                <span class="m-lbl">{{ (btResult?.asset_type === 'stock' || btForm.asset_type === 'stock') ? '成交股数' : '成交份额' }}</span>
+                <span class="m-val">{{ formatNumber(selectedBtTrade.shares, (btResult?.asset_type === 'stock' || btForm.asset_type === 'stock') ? 0 : 2) }} {{ (btResult?.asset_type === 'stock' || btForm.asset_type === 'stock') ? '股' : '份' }}</span>
               </div>
               <div class="metric-cell">
                 <span class="m-lbl">成交发生总额</span>
@@ -1853,8 +1884,8 @@
             </div>
             <div class="grid-metrics-box">
               <div class="metric-cell">
-                <span class="m-lbl">成交后持仓份额</span>
-                <span class="m-val">{{ formatNumber(selectedBtTrade.holding_shares, 2) }} 股/份</span>
+                <span class="m-lbl">{{ (btResult?.asset_type === 'stock' || btForm.asset_type === 'stock') ? '成交后持仓股数' : '成交后持仓份额' }}</span>
+                <span class="m-val">{{ formatNumber(selectedBtTrade.holding_shares, (btResult?.asset_type === 'stock' || btForm.asset_type === 'stock') ? 0 : 2) }} {{ (btResult?.asset_type === 'stock' || btForm.asset_type === 'stock') ? '股' : '份' }}</span>
               </div>
               <div class="metric-cell">
                 <span class="m-lbl">成交后持仓市值</span>
@@ -2068,6 +2099,7 @@ const getStrategyRuleTags = (strat) => {
       tags.push(`回踩 ≥ -${cfg.t_pullback_buy_pct || 1.5}% 接回`)
     }
     if (cfg.base_protect_shares) tags.push(`锁定保护 ${cfg.base_protect_shares}股`)
+    if (cfg.enable_lot_profit_take !== false && cfg.lot_profit_take_pct) tags.push(`批次涨 ≥ +${cfg.lot_profit_take_pct}% 独立止盈`)
     if (cfg.cumulative_profit_target_pct) tags.push(`总目标止盈 ≥ ${cfg.cumulative_profit_target_pct}%`)
   } else if (stype === 'dip_buying_profit_take' || stype === 'stock_dip_profit_take') {
     const rawBuy = cfg.buy_tiers || cfg.dip_buy_tiers || []
@@ -2730,7 +2762,7 @@ const renderBacktestChart = () => {
     })
   }
 
-  const isStock = btResult.value.asset_type === 'stock' || btResult.value.strategy_type?.startsWith('stock_')
+  const isStock = btResult.value.asset_type === 'stock' || btForm.asset_type === 'stock' || btResult.value.strategy_type?.startsWith('stock_')
   const option = {
     backgroundColor: 'transparent',
     tooltip: {
@@ -2748,7 +2780,7 @@ const renderBacktestChart = () => {
           <div style="color:#00d4ff;">🎯 策略收益率: <b>${item.strategy_return_pct > 0 ? '+' : ''}${item.strategy_return_pct}%</b></div>
           <div style="color:#fbbf24;">📈 ${isStock ? '股票买入持有' : '基金基准收益'}: <b>${item.benchmark_return_pct > 0 ? '+' : ''}${item.benchmark_return_pct}%</b></div>
           <div style="color:#94a3b8; font-size:11px; margin-top:4px;">
-            ${isStock ? '股价' : '净值'}: ${item.nav.toFixed(isStock ? 2 : 4)} | 资产: ¥${formatNumber(item.total_assets, 0)} | 现金: ¥${formatNumber(item.cash, 0)}
+            ${isStock ? '股价' : '净值'}: ¥${item.nav.toFixed(isStock ? 2 : 4)} | 资产: ¥${formatNumber(item.total_assets, 0)} | 现金: ¥${formatNumber(item.cash, 0)}
           </div>
         `
       }
@@ -2794,7 +2826,7 @@ const renderBacktestChart = () => {
         }
       },
       {
-        name: isStock ? '股票买入持有基准' : '基金基准收益率',
+        name: isStock ? '股票买入持有基准' : '基金买入持有基准',
         type: 'line',
         data: bmReturns,
         smooth: true,
@@ -2818,13 +2850,15 @@ const renderBacktestChart = () => {
 const applyBacktestAsLiveStrategy = async () => {
   if (!btResult.value) return
   try {
-    const isStock = btResult.value.asset_type === 'stock' || btResult.value.strategy_type?.startsWith('stock_')
+    const isStock = btResult.value.asset_type === 'stock' || btForm.asset_type === 'stock' || btResult.value.strategy_type?.startsWith('stock_')
+    const targetName = btResult.value.target_name || btResult.value.fund_name
+    const targetCode = btResult.value.target_code || btResult.value.fund_code
     const payload = {
       asset_type: isStock ? 'stock' : 'fund',
-      target_code: btResult.value.fund_code,
-      target_name: btResult.value.fund_name,
+      target_code: targetCode,
+      target_name: targetName,
       strategy_type: btResult.value.strategy_type,
-      name: `${btResult.value.fund_name} - 实盘策略`,
+      name: `${targetName} - ${isStock ? '股票' : '基金'}实盘策略`,
       initial_capital: btResult.value.metrics.initial_capital || 10000,
       current_cash: btResult.value.metrics.initial_capital || 10000,
       current_shares: 0,

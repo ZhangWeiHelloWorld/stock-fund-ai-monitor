@@ -100,5 +100,14 @@ export default {
   scanStrategySignals: () => api.post('/strategies/scan-signals').then(res => res.data),
   getStrategySignals: (status = 'pending') => api.get(`/strategies/signals/list?status=${status}`).then(res => res.data),
   executeStrategySignal: (id, data) => api.post(`/strategies/signals/${id}/execute`, data).then(res => res.data),
-  getStrategyTrades: (id) => api.get(`/strategies/${id}/trades`).then(res => res.data)
+  getStrategyTrades: (id) => api.get(`/strategies/${id}/trades`).then(res => res.data),
+
+  // Calendar
+  getCalendarMonth: (year, month) => api.get(`/calendar/month?year=${year}&month=${month}`).then(res => res.data),
+  getCalendarDay: (date) => api.get(`/calendar/day/${date}`).then(res => res.data),
+  generateCalendarAiAdvice: (data) => api.post('/calendar/ai-advice', data).then(res => res.data),
+  verifyCalendarAiAdvice: (date, data) => api.put(`/calendar/ai-advice/${date}/verify`, data).then(res => res.data),
+  calculateCalendarBazi: (data) => api.post('/calendar/calculate-bazi', data).then(res => res.data),
+  getCalendarCities: () => api.get('/calendar/cities').then(res => res.data)
 }
+

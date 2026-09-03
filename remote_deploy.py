@@ -51,7 +51,7 @@ def create_deploy_zip():
     print(f"📦 [打包本地代码] 创建 {LOCAL_ZIP}")
     print("==========================================")
     
-    exclude_dirs = {'node_modules', 'venv', '__pycache__', '.git', '.idea', '.vscode', 'scratch', 'dist', 'local_backups', 'lh_backups'}
+    exclude_dirs = {'node_modules', 'venv', '__pycache__', '.git', '.idea', '.vscode', 'scratch', 'local_backups', 'lh_backups'}
     exclude_extensions = {'.db', '.sqlite', '.sqlite3', '.pyc', '.zip', '.DS_Store', '.log'}
     exclude_files = {'admin_config.json', 'deploy_config.json', '.env'}
 

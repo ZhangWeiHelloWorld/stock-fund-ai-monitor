@@ -611,6 +611,286 @@
         </div>
       </div>
 
+      <!-- 📅 投资日历与生辰档案配置 (紧凑流线型卡片) -->
+      <div class="glass-card settings-section full-width-card compact-card">
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px; flex-wrap:wrap; gap:8px;">
+          <h3 class="section-title" style="margin:0; font-size:1.1rem; border-bottom:none; padding-bottom:0;">
+            📅 投资日历与生辰档案配置
+          </h3>
+          <button class="btn btn-glass btn-sm" @click="fillDefaultBirthProfile" title="快捷填入默认参考档案" style="font-size:0.8rem; padding:3px 8px;">
+            ✨ 快捷填入参考档案 (1992-06-25 07:40 男 北京市)
+          </button>
+        </div>
+
+        <!-- 1. 出生自然信息 (单行流线型横排) -->
+        <div class="compact-flow-box">
+          <div class="compact-row">
+            <div class="compact-group">
+              <label>历法:</label>
+              <select class="form-control form-control-sm" style="width:115px;" v-model="settings.calendar_calendar_type" @change="onCalendarTypeChange">
+                <option value="solar">☀️ 公历(阳历)</option>
+                <option value="lunar">🌙 农历(阴历)</option>
+              </select>
+            </div>
+
+            <div class="compact-group">
+              <label>性别:</label>
+              <select class="form-control form-control-sm" style="width:85px;" v-model="settings.calendar_gender" @change="handleBirthInfoChange">
+                <option value="male">👦 乾造</option>
+                <option value="female">👧 坤造</option>
+              </select>
+            </div>
+
+            <!-- 公历日期组合 (输入框 + 年月日下拉并排) -->
+            <div v-if="settings.calendar_calendar_type === 'solar'" class="compact-group">
+              <label>公历生日:</label>
+              <input
+                ref="solarDateInputRef"
+                type="date"
+                class="form-control form-control-sm"
+                v-model="settings.calendar_birth_date"
+                @change="onSolarDateInputChange"
+                @click="triggerSolarDatePicker"
+                style="width:130px; cursor:pointer;"
+                required
+              />
+              <select class="form-control form-control-sm" style="width:84px;" v-model="solarYear" @change="onSolarSelectChange">
+                <option v-for="y in yearOptions" :key="y" :value="y">{{ y }}年</option>
+              </select>
+              <select class="form-control form-control-sm" style="width:68px;" v-model="solarMonth" @change="onSolarSelectChange">
+                <option v-for="m in 12" :key="m" :value="m">{{ m }}月</option>
+              </select>
+              <select class="form-control form-control-sm" style="width:68px;" v-model="solarDay" @change="onSolarSelectChange">
+                <option v-for="d in daysInSolarMonth" :key="d" :value="d">{{ d }}日</option>
+              </select>
+            </div>
+
+            <!-- 公历对应农历提示 (独立在下一行显示，避免挤压截断) -->
+            <div v-if="settings.calendar_calendar_type === 'solar' && calculatedBazi?.lunar_desc" class="date-convert-tip">
+              <span class="text-accent">🌙 对应农历: <strong>{{ calculatedBazi.lunar_desc }}</strong></span>
+            </div>
+
+            <!-- 农历日期组合 -->
+            <div v-if="settings.calendar_calendar_type === 'lunar'" class="compact-group">
+              <label>农历生日:</label>
+              <select class="form-control form-control-sm" style="width:130px;" v-model="lunarYear" @change="onLunarSelectChange">
+                <option v-for="y in yearOptions" :key="y" :value="y">{{ y }}年 ({{ getYearZodiacText(y) }})</option>
+              </select>
+              <select class="form-control form-control-sm" style="width:82px;" v-model="lunarMonth" @change="onLunarSelectChange">
+                <option v-for="(mName, idx) in lunarMonthNames" :key="idx+1" :value="idx+1">{{ mName }}</option>
+              </select>
+              <label v-if="currentYearLeapMonth === lunarMonth" class="checkbox-label" style="display:inline-flex; align-items:center; gap:2px; margin:0; cursor:pointer;">
+                <input type="checkbox" v-model="isLunarLeap" @change="onLunarSelectChange" />
+                <span style="font-size:0.78rem; color:var(--accent-primary);">闰月</span>
+              </label>
+              <select class="form-control form-control-sm" style="width:78px;" v-model="lunarDay" @change="onLunarSelectChange">
+                <option v-for="(dName, idx) in lunarDayNames" :key="idx+1" :value="idx+1">{{ dName }}</option>
+              </select>
+            </div>
+
+            <!-- 农历对应公历提示 (独立在下一行显示，避免挤压截断) -->
+            <div v-if="settings.calendar_calendar_type === 'lunar' && settings.calendar_birth_date" class="date-convert-tip">
+              <span class="text-accent">☀️ 对应公历 (阳历): <strong>{{ settings.calendar_birth_date }}</strong></span>
+            </div>
+
+            <!-- 出生时间 -->
+            <div class="compact-group">
+              <label>时间:</label>
+              <input
+                ref="timeInputRef"
+                type="time"
+                class="form-control form-control-sm"
+                v-model="settings.calendar_birth_time"
+                @change="handleBirthInfoChange"
+                @click="triggerTimePicker"
+                style="width:92px; cursor:pointer;"
+                required
+              />
+              <select class="form-control form-control-sm" style="width:115px;" v-model="selectedShiChen" @change="onShiChenSelectChange">
+                <option value="">快捷时辰</option>
+                <option value="00:00">子时 (23-01)</option>
+                <option value="02:00">丑时 (01-03)</option>
+                <option value="04:00">寅时 (03-05)</option>
+                <option value="06:00">卯时 (05-07)</option>
+                <option value="07:40">辰时 (07-09)</option>
+                <option value="10:00">巳时 (09-11)</option>
+                <option value="12:00">午时 (11-13)</option>
+                <option value="14:00">未时 (13-15)</option>
+                <option value="16:00">申时 (15-17)</option>
+                <option value="18:00">酉时 (17-19)</option>
+                <option value="20:00">戌时 (19-21)</option>
+                <option value="22:00">亥时 (21-23)</option>
+              </select>
+              <span class="text-secondary" style="font-size:0.78rem;">{{ currentShiChenText.split(' ')[0] }}</span>
+            </div>
+          </div>
+
+          <!-- 行2：出生地点 + 经度真太阳时 + 生肖星座 (单行横排) -->
+          <div class="compact-row" style="background:rgba(255,255,255,0.02); padding:6px 10px; border-radius:6px; border:1px solid var(--border-glass);">
+            <div class="compact-group">
+              <label>出生地点:</label>
+              <select class="form-control form-control-sm" style="width:110px;" v-model="settings.calendar_birth_province" @change="onProvinceChange">
+                <option v-for="prov in provinceList" :key="prov" :value="prov">{{ prov }}</option>
+              </select>
+              <select class="form-control form-control-sm" style="width:110px;" v-model="settings.calendar_birth_city" @change="onCityChange">
+                <option v-for="c in availableCityList" :key="c" :value="c">{{ c }}</option>
+              </select>
+            </div>
+
+            <div class="compact-group ml-2" style="font-size:0.83rem;">
+              <span>📍 经度: <strong>{{ settings.calendar_birth_longitude || 116.4 }}°E</strong></span>
+              <span class="ml-2">⏰ 真太阳时: <strong class="text-accent">{{ settings.calendar_true_solar_time || '07:26' }}</strong></span>
+              <span class="text-secondary" style="font-size:0.78rem;">({{ solarOffsetNote }})</span>
+            </div>
+
+            <div class="compact-group" style="margin-left:auto; font-size:0.83rem;">
+              <span>属相: <strong>{{ settings.calendar_zodiac || '猴' }}</strong></span>
+              <span class="ml-2">星座: <strong>{{ settings.calendar_constellation || '巨蟹座' }}</strong></span>
+            </div>
+          </div>
+        </div>
+
+        <!-- 2. 智能测算排盘 (四柱胶囊与五行紧凑单行横排) -->
+        <div class="compact-bazi-bar mt-2">
+          <div class="bazi-pillars-row">
+            <div class="compact-pillar-pill">
+              <span class="p-name">年柱</span>
+              <input type="text" class="compact-bazi-input" v-model="settings.calendar_bazi_year" />
+            </div>
+            <div class="compact-pillar-pill">
+              <span class="p-name">月柱</span>
+              <input type="text" class="compact-bazi-input" v-model="settings.calendar_bazi_month" />
+            </div>
+            <div class="compact-pillar-pill active-day-master">
+              <span class="p-name">日柱(日主)</span>
+              <input type="text" class="compact-bazi-input" v-model="settings.calendar_bazi_day" style="color:var(--accent-primary); font-weight:700;" />
+              <strong class="text-accent ml-1" style="font-size:0.82rem;">{{ settings.calendar_bazi_day_master }}</strong>
+            </div>
+            <div class="compact-pillar-pill">
+              <span class="p-name">时柱</span>
+              <input type="text" class="compact-bazi-input" v-model="settings.calendar_bazi_hour" />
+            </div>
+
+            <!-- 五行分布统计 -->
+            <div class="compact-wx-counts" v-if="parsedWuxingCounts">
+              <span class="wx-item">金 {{ parsedWuxingCounts['金'] || 0 }}</span>
+              <span class="wx-item">木 {{ parsedWuxingCounts['木'] || 0 }}</span>
+              <span class="wx-item">水 {{ parsedWuxingCounts['水'] || 0 }}</span>
+              <span class="wx-item">火 {{ parsedWuxingCounts['火'] || 0 }}</span>
+              <span class="wx-item">土 {{ parsedWuxingCounts['土'] || 0 }}</span>
+            </div>
+          </div>
+
+          <!-- 喜忌神配置 (紧凑两栏) -->
+          <div class="compact-row mt-2" style="margin-bottom:0;">
+            <div class="compact-group" style="flex:1;">
+              <label style="color:var(--green);">喜用神:</label>
+              <input type="text" class="form-control form-control-sm" v-model="settings.calendar_bazi_favorable" placeholder="如 金, 水, 湿土" />
+            </div>
+            <div class="compact-group" style="flex:1;">
+              <label style="color:var(--red);">忌神刑冲:</label>
+              <input type="text" class="form-control form-control-sm" v-model="settings.calendar_bazi_unfavorable" placeholder="如 燥土, 烈火, 刑冲" />
+            </div>
+          </div>
+        </div>
+
+        <!-- 3. 显示偏好与 AI 开关 (单行横排平铺) -->
+        <div class="compact-row mt-2" style="background:rgba(255,255,255,0.02); padding:6px 10px; border-radius:6px; border:1px solid var(--border-glass);">
+          <div class="compact-group">
+            <label>收益展现:</label>
+            <label class="radio-label" style="display:inline-flex; align-items:center; gap:4px; margin:0; cursor:pointer; font-size:0.82rem;">
+              <input type="radio" v-model="settings.calendar_profit_display_mode" value="amount" />
+              <span>💰 金额(元)</span>
+            </label>
+            <label class="radio-label ml-1" style="display:inline-flex; align-items:center; gap:4px; margin:0; cursor:pointer; font-size:0.82rem;">
+              <input type="radio" v-model="settings.calendar_profit_display_mode" value="percent" />
+              <span>📈 比例(%)</span>
+            </label>
+          </div>
+
+          <div class="compact-group ml-3">
+            <label class="checkbox-label" style="display:inline-flex; align-items:center; gap:4px; margin:0; cursor:pointer; font-size:0.82rem;">
+              <input type="checkbox" v-model="settings.calendar_show_metaphysics" />
+              <span>☯️ 五行易卦</span>
+            </label>
+            <label class="checkbox-label ml-2" style="display:inline-flex; align-items:center; gap:4px; margin:0; cursor:pointer; font-size:0.82rem;">
+              <input type="checkbox" v-model="settings.calendar_show_auspicious" />
+              <span>🔮 投资吉凶标签</span>
+            </label>
+            <label class="checkbox-label ml-2" style="display:inline-flex; align-items:center; gap:4px; margin:0; cursor:pointer; font-size:0.82rem;">
+              <input type="checkbox" v-model="settings.calendar_show_shensha" />
+              <span>🌟 显示流日神煞</span>
+            </label>
+          </div>
+
+          <div class="compact-group ml-3">
+            <label class="checkbox-label" style="display:inline-flex; align-items:center; gap:4px; margin:0; cursor:pointer; font-size:0.82rem;">
+              <input type="checkbox" v-model="settings.calendar_ai_enabled" />
+              <span>🤖 开启 AI 宏观大事研判</span>
+            </label>
+          </div>
+
+          <button class="btn-text ml-auto" @click="showPromptEditor = !showPromptEditor" style="font-size:0.8rem; color:var(--accent-primary); cursor:pointer;">
+            {{ showPromptEditor ? '▲ 收起提示词' : '⚙️ 自定义提示词模板' }}
+          </button>
+        </div>
+
+        <!-- 4. 可折叠提示词编辑区域 (默认收起) -->
+        <div v-if="showPromptEditor" class="mt-2" style="background:rgba(0,0,0,0.3); padding:10px; border-radius:6px; border:1px solid var(--border-glass);">
+          <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:4px;">
+            <span style="font-size:0.82rem; color:var(--text-secondary);">投资日历 AI 提示词模板 (Prompt)</span>
+            <button class="btn-text" @click="resetDefaultCalendarPrompt" style="font-size:0.78rem; color:var(--accent-primary);">↺ 恢复默认模板</button>
+          </div>
+          <textarea class="form-control form-control-sm" rows="4" v-model="settings.calendar_ai_prompt_template" style="font-size:0.8rem; line-height:1.4;"></textarea>
+          <!-- 可用插值变量 (带功能标签，点击可快捷插入) -->
+          <div class="prompt-vars-list mt-2">
+            <span class="vars-title">💡 可用插值变量（带功能标签，点击可快捷插入）：</span>
+            <div class="vars-chips">
+              <span class="var-chip" @click="insertPromptVar('{stock_holdings}')" title="点击插入到提示词">
+                <span class="var-label">持仓股票:</span>
+                <code>{stock_holdings}</code>
+              </span>
+              <span class="var-chip" @click="insertPromptVar('{fund_holdings}')" title="点击插入到提示词">
+                <span class="var-label">持仓基金:</span>
+                <code>{fund_holdings}</code>
+              </span>
+              <span class="var-chip" @click="insertPromptVar('{portfolio_summary}')" title="点击插入到提示词">
+                <span class="var-label">资产总览:</span>
+                <code>{portfolio_summary}</code>
+              </span>
+              <span class="var-chip" @click="insertPromptVar('{bazi_info}')" title="点击插入到提示词">
+                <span class="var-label">生辰八字:</span>
+                <code>{bazi_info}</code>
+              </span>
+              <span class="var-chip" @click="insertPromptVar('{calendar_day_info}')" title="点击插入到提示词">
+                <span class="var-label">流日易卦:</span>
+                <code>{calendar_day_info}</code>
+              </span>
+              <span class="var-chip" @click="insertPromptVar('{financial_events}')" title="点击插入到提示词">
+                <span class="var-label">财经大事:</span>
+                <code>{financial_events}</code>
+              </span>
+              <span class="var-chip" @click="insertPromptVar('{date}')" title="点击插入到提示词">
+                <span class="var-label">当前日期:</span>
+                <code>{date}</code>
+              </span>
+            </div>
+          </div>
+        </div>
+
+        <!-- 5. 底部操作按钮 (紧凑并排) -->
+        <div class="compact-actions-row mt-2">
+          <button class="btn btn-primary btn-sm" @click="saveSettings" style="padding:4px 14px; font-size:0.85rem;">💾 保存配置</button>
+          <button class="btn btn-glass btn-sm" @click="testCalendarAi" :disabled="testingCalendarAi" style="padding:4px 14px; font-size:0.85rem;">
+            <span v-if="testingCalendarAi">🧠 测算中...</span>
+            <span v-else>🧪 测试今日 AI 研判</span>
+          </button>
+          <span v-if="calendarAiTestResult" class="ml-2" :class="calendarAiTestResult.success ? 'text-green' : 'text-red'" style="font-size:0.82rem;">
+            {{ calendarAiTestResult.success ? '✅ 测试成功' : '❌ ' + calendarAiTestResult.message }}
+          </span>
+        </div>
+      </div>
+
       <!-- 管理员：用户账号管理 -->
       <div v-if="currentUser?.role === 'admin'" class="glass-card settings-section full-width-card">
         <div class="section-header-row">
@@ -727,7 +1007,7 @@
 </template>
 
 <script setup>
-import { ref, reactive, watch, onMounted, inject } from 'vue'
+import { ref, reactive, computed, watch, onMounted, inject } from 'vue'
 import api from '../api'
 
 const showToast = inject('showToast')
@@ -737,6 +1017,7 @@ const testingFormat = ref(false)
 const testingDeepseek = ref(false)
 const testingAiNews = ref(false)
 const testingAlert = ref(false)
+const testingCalendarAi = ref(false)
 const showSecret = ref(false)
 const showDeepseekKey = ref(false)
 const testResult = ref(null)
@@ -744,6 +1025,108 @@ const formatTestResult = ref(null)
 const deepseekTestResult = ref(null)
 const aiNewsTestResult = ref(null)
 const alertTestResult = ref(null)
+const calendarAiTestResult = ref(null)
+const showPromptEditor = ref(false)
+
+const citiesData = ref({})
+const calculatingBazi = ref(false)
+const calculatedBazi = ref(null)
+
+const parsedWuxingCounts = computed(() => {
+  try {
+    return JSON.parse(settings.value.calendar_wuxing_counts || '{}')
+  } catch (e) {
+    return null
+  }
+})
+
+const provinceList = computed(() => {
+  const keys = Object.keys(citiesData.value)
+  return keys.length ? keys : ['北京市', '上海市', '天津市', '重庆市', '广东省', '浙江省', '江苏省', '四川省', '湖北省', '湖南省', '山东省', '河南省', '河北省', '福建省', '陕西省', '安徽省', '江西省', '辽宁省']
+})
+
+const availableCityList = computed(() => {
+  const prov = settings.value.calendar_birth_province
+  if (prov && citiesData.value[prov]) {
+    return Object.keys(citiesData.value[prov])
+  }
+  return [settings.value.calendar_birth_city || '北京市']
+})
+
+const solarOffsetNote = computed(() => {
+  const lng = Number(settings.value.calendar_birth_longitude || 120.0)
+  const offset = Math.round((lng - 120.0) * 4)
+  if (offset === 0) return '与北京时间一致'
+  return offset > 0 ? `较北京时间偏快+${offset}分钟` : `较北京时间偏慢${offset}分钟`
+})
+
+// 日期与时辰专属响应式控制器
+const solarDateInputRef = ref(null)
+const timeInputRef = ref(null)
+
+const triggerSolarDatePicker = () => {
+  if (solarDateInputRef.value && typeof solarDateInputRef.value.showPicker === 'function') {
+    solarDateInputRef.value.showPicker()
+  }
+}
+
+const triggerTimePicker = () => {
+  if (timeInputRef.value && typeof timeInputRef.value.showPicker === 'function') {
+    timeInputRef.value.showPicker()
+  }
+}
+
+const lunarMonthNames = ['正月', '二月', '三月', '四月', '五月', '六月', '七月', '八月', '九月', '十月', '冬月', '腊月']
+const lunarDayNames = [
+  '初一', '初二', '初三', '初四', '初五', '初六', '初七', '初八', '初九', '初十',
+  '十一', '十二', '十三', '十四', '十五', '十六', '十七', '十八', '十九', '二十',
+  '廿一', '廿二', '廿三', '廿四', '廿五', '廿六', '廿七', '廿八', '廿九', '三十'
+]
+const yearOptions = []
+for (let y = 1940; y <= 2035; y++) yearOptions.push(y)
+
+const solarYear = ref(1992)
+const solarMonth = ref(6)
+const solarDay = ref(25)
+
+const lunarYear = ref(1992)
+const lunarMonth = ref(5)
+const lunarDay = ref(25)
+const isLunarLeap = ref(false)
+const selectedShiChen = ref('')
+
+const daysInSolarMonth = computed(() => {
+  return new Date(solarYear.value, solarMonth.value, 0).getDate()
+})
+
+const currentYearLeapMonth = computed(() => {
+  return calculatedBazi.value?.is_leap_month ? lunarMonth.value : 0
+})
+
+const getYearZodiacText = (y) => {
+  const zodiacs = ['鼠', '牛', '虎', '兔', '龙', '蛇', '马', '羊', '猴', '鸡', '狗', '猪']
+  return zodiacs[(y - 4) % 12] + '年'
+}
+
+const currentShiChenText = computed(() => {
+  const t = settings.value.calendar_birth_time || '12:00'
+  const parts = t.split(':')
+  const h = parseInt(parts[0]) || 0
+  const m = parseInt(parts[1]) || 0
+  const totalMin = h * 60 + m
+  if (totalMin >= 23 * 60 || totalMin < 1 * 60) return '子时 (23:00-01:00)'
+  if (totalMin < 3 * 60) return '丑时 (01:00-03:00)'
+  if (totalMin < 5 * 60) return '寅时 (03:00-05:00)'
+  if (totalMin < 7 * 60) return '卯时 (05:00-07:00)'
+  if (totalMin < 9 * 60) return '辰时 (07:00-09:00)'
+  if (totalMin < 11 * 60) return '巳时 (09:00-11:00)'
+  if (totalMin < 13 * 60) return '午时 (11:00-13:00)'
+  if (totalMin < 15 * 60) return '未时 (13:00-15:00)'
+  if (totalMin < 17 * 60) return '申时 (15:00-17:00)'
+  if (totalMin < 19 * 60) return '酉时 (17:00-19:00)'
+  if (totalMin < 21 * 60) return '戌时 (19:00-21:00)'
+  return '亥时 (21:00-23:00)'
+})
 
 const currentUser = ref(null)
 const usersList = ref([])
@@ -803,6 +1186,32 @@ const DEFAULT_NEWS_PROMPT = `你是一位顶尖的金融证券分析师与风险
 - 请直接使用简洁清晰的段落与 Emoji，排版力求适合手机微信快速阅读；
 - 严禁输出 **粗体**、### 标题、--- 分割线 等 Markdown 符号，保持界面利落清晰。`
 
+const DEFAULT_CALENDAR_AI_PROMPT = `你是一位精通中国传统命理易经五行与现代宏观金融投资的顶级资产配置专家。
+请根据投资者的生辰八字、今日天干地支五行与易经卦象气场，结合投资者当下的实际股票/基金持仓数据以及今日国内外重大金融财经大事，进行全方位的综合复盘研判，并给出今日最终的专业投资操作建议。
+
+【投资者命理信息】：
+{bazi_info}
+
+【今日时空易象】：
+{calendar_day_info}
+
+【投资者当前实际持仓】：
+{stock_holdings}
+{fund_holdings}
+{portfolio_summary}
+
+【今日世界与国内金融重大要闻】：
+{financial_events}
+
+【分析与建议要求】：
+1. ☯️【五行气场与持仓行业共振】：分析今日干支与卦象对投资者日主的生克制化，以及对持仓资产所处行业（半导体科技、新能源/锂电、AI/数字经济等）的五行利弊影响；
+2. 🌍【国内外宏观金融要闻传导】：研判全球资本市场风向及国内政策/大盘资金面变动，对持仓品种产生的利好或利空冲击；
+3. 🎯【今日终极投资操作建议】：明确给出针对当前持仓的具体操作决策（如：逢高止盈减仓、逆势分批低吸、卧倒坚守、防范刑冲洗盘风险等），并给出仓位控制指引；
+4. 🔮【次日/后市关键观察信号】：给出投资者接下来的关键防守位或进攻观察点。
+
+排版要求：
+- 请使用清晰工整的段落与 Emoji，语言专业有力、逻辑严密、切中要害，便于随时复盘核验。`
+
 const settings = ref({
   wxwork_corpid: '',
   wxwork_agentsecret: '',
@@ -847,7 +1256,31 @@ const settings = ref({
   alert_fund_fall_pct: -2.0,
   alert_fund_swing_enabled: true,
   alert_fund_swing_minutes: 15,
-  alert_fund_swing_pct: 1.5
+  alert_fund_swing_pct: 1.5,
+  calendar_birth_date: '1992-06-25',
+  calendar_birth_time: '07:40',
+  calendar_calendar_type: 'solar',
+  calendar_gender: 'male',
+  calendar_birth_province: '北京市',
+  calendar_birth_city: '北京市',
+  calendar_birth_longitude: 116.4,
+  calendar_true_solar_time: '07:26',
+  calendar_zodiac: '猴',
+  calendar_constellation: '巨蟹座',
+  calendar_wuxing_counts: '{"金": 1, "木": 1, "水": 3, "火": 2, "土": 1}',
+  calendar_bazi_year: '壬申',
+  calendar_bazi_month: '丙午',
+  calendar_bazi_day: '壬辰',
+  calendar_bazi_hour: '甲辰',
+  calendar_bazi_day_master: '壬水',
+  calendar_bazi_favorable: '金, 水, 湿土 (庚辛申酉 / 壬癸亥子 / 辰丑)',
+  calendar_bazi_unfavorable: '燥土, 烈火, 刑冲 (戊未戌 / 丙午 / 寅申冲 / 辰戌冲)',
+  calendar_profit_display_mode: 'amount',
+  calendar_show_metaphysics: true,
+  calendar_show_auspicious: true,
+  calendar_show_shensha: true,
+  calendar_ai_enabled: true,
+  calendar_ai_prompt_template: DEFAULT_CALENDAR_AI_PROMPT
 })
 
 const formatDate = (isoStr) => {
@@ -1014,18 +1447,23 @@ const onCustomMinutesInput = () => {
 const fetchSettings = async () => {
   loadCurrentUser()
   try {
-    const [data, stocksData, fundsData] = await Promise.all([
+    const [data, stocksData, fundsData, citiesRes] = await Promise.all([
       api.getSettings(),
       api.getStocks().catch(() => []),
-      api.getFunds().catch(() => [])
+      api.getFunds().catch(() => []),
+      api.getCalendarCities().catch(() => null)
     ])
     stocksList.value = stocksData || []
     fundsList.value = fundsData || []
+    if (citiesRes?.cities) {
+      citiesData.value = citiesRes.cities
+    }
 
     if (data) {
       Object.assign(settings.value, data)
       initScheduleState()
       initSelectionState()
+      syncSolarDropdowns(settings.value.calendar_birth_date)
     }
     await fetchUsers()
   } catch (e) {
@@ -1133,6 +1571,196 @@ const copyText = (text) => {
   navigator.clipboard.writeText(text).then(() => {
     showToast('✅ 已复制到剪贴板')
   })
+}
+
+const syncSolarDropdowns = (dateStr) => {
+  if (!dateStr) return
+  const parts = dateStr.split('-')
+  if (parts.length === 3) {
+    solarYear.value = parseInt(parts[0]) || 1992
+    solarMonth.value = parseInt(parts[1]) || 6
+    solarDay.value = parseInt(parts[2]) || 25
+  }
+}
+
+const onCalendarTypeChange = () => {
+  handleBirthInfoChange()
+}
+
+const onSolarDateInputChange = () => {
+  syncSolarDropdowns(settings.value.calendar_birth_date)
+  handleBirthInfoChange()
+}
+
+const onSolarSelectChange = () => {
+  const dMax = daysInSolarMonth.value
+  if (solarDay.value > dMax) solarDay.value = dMax
+  const mStr = String(solarMonth.value).padStart(2, '0')
+  const dStr = String(solarDay.value).padStart(2, '0')
+  settings.value.calendar_birth_date = `${solarYear.value}-${mStr}-${dStr}`
+  handleBirthInfoChange()
+}
+
+const onLunarSelectChange = async () => {
+  calculatingBazi.value = true
+  try {
+    const res = await api.calculateCalendarBazi({
+      birth_date: `${lunarYear.value}-${String(lunarMonth.value).padStart(2, '0')}-${String(lunarDay.value).padStart(2, '0')}`,
+      birth_time: settings.value.calendar_birth_time || '12:00',
+      calendar_type: 'lunar',
+      is_leap_month: isLunarLeap.value,
+      lunar_year: lunarYear.value,
+      lunar_month: lunarMonth.value,
+      lunar_day: lunarDay.value,
+      gender: settings.value.calendar_gender || 'male',
+      province: settings.value.calendar_birth_province || '北京市',
+      city: settings.value.calendar_birth_city || '北京市'
+    })
+    if (res) {
+      calculatedBazi.value = res
+      settings.value.calendar_birth_date = res.solar_date
+      syncSolarDropdowns(res.solar_date)
+      settings.value.calendar_bazi_year = res.year_pillar
+      settings.value.calendar_bazi_month = res.month_pillar
+      settings.value.calendar_bazi_day = res.day_pillar
+      settings.value.calendar_bazi_hour = res.hour_pillar
+      settings.value.calendar_bazi_day_master = res.day_master
+      settings.value.calendar_bazi_favorable = res.favorable
+      settings.value.calendar_bazi_unfavorable = res.unfavorable
+      settings.value.calendar_birth_longitude = res.longitude
+      settings.value.calendar_true_solar_time = res.true_solar_time
+      settings.value.calendar_zodiac = res.zodiac
+      settings.value.calendar_constellation = res.constellation
+      settings.value.calendar_wuxing_counts = JSON.stringify(res.wuxing_counts)
+    }
+  } catch (e) {
+    console.error('Failed to calculate Lunar BaZi:', e)
+  } finally {
+    calculatingBazi.value = false
+  }
+}
+
+const onShiChenSelectChange = () => {
+  if (selectedShiChen.value) {
+    settings.value.calendar_birth_time = selectedShiChen.value
+    handleBirthInfoChange()
+  }
+}
+
+const onProvinceChange = () => {
+  const prov = settings.value.calendar_birth_province
+  if (citiesData.value[prov]) {
+    const cities = Object.keys(citiesData.value[prov])
+    if (cities.length) {
+      settings.value.calendar_birth_city = cities[0]
+      settings.value.calendar_birth_longitude = citiesData.value[prov][cities[0]]
+    }
+  }
+  handleBirthInfoChange()
+}
+
+const onCityChange = () => {
+  const prov = settings.value.calendar_birth_province
+  const city = settings.value.calendar_birth_city
+  if (citiesData.value[prov] && citiesData.value[prov][city]) {
+    settings.value.calendar_birth_longitude = citiesData.value[prov][city]
+  }
+  handleBirthInfoChange()
+}
+
+const handleBirthInfoChange = async () => {
+  if (!settings.value.calendar_birth_date || !settings.value.calendar_birth_time) return
+  calculatingBazi.value = true
+  try {
+    const res = await api.calculateCalendarBazi({
+      birth_date: settings.value.calendar_birth_date,
+      birth_time: settings.value.calendar_birth_time,
+      calendar_type: settings.value.calendar_calendar_type || 'solar',
+      is_leap_month: isLunarLeap.value,
+      lunar_year: lunarYear.value,
+      lunar_month: lunarMonth.value,
+      lunar_day: lunarDay.value,
+      gender: settings.value.calendar_gender || 'male',
+      province: settings.value.calendar_birth_province || '北京市',
+      city: settings.value.calendar_birth_city || '北京市'
+    })
+    if (res) {
+      calculatedBazi.value = res
+      if (res.solar_date) {
+        settings.value.calendar_birth_date = res.solar_date
+        syncSolarDropdowns(res.solar_date)
+      }
+      if (res.lunar_year) {
+        lunarYear.value = res.lunar_year
+        lunarMonth.value = res.lunar_month
+        lunarDay.value = res.lunar_day
+        isLunarLeap.value = Boolean(res.is_leap_month)
+      }
+      settings.value.calendar_bazi_year = res.year_pillar
+      settings.value.calendar_bazi_month = res.month_pillar
+      settings.value.calendar_bazi_day = res.day_pillar
+      settings.value.calendar_bazi_hour = res.hour_pillar
+      settings.value.calendar_bazi_day_master = res.day_master
+      settings.value.calendar_bazi_favorable = res.favorable
+      settings.value.calendar_bazi_unfavorable = res.unfavorable
+      settings.value.calendar_birth_longitude = res.longitude
+      settings.value.calendar_true_solar_time = res.true_solar_time
+      settings.value.calendar_zodiac = res.zodiac
+      settings.value.calendar_constellation = res.constellation
+      settings.value.calendar_wuxing_counts = JSON.stringify(res.wuxing_counts)
+    }
+  } catch (e) {
+    console.error('Failed to calculate BaZi:', e)
+  } finally {
+    calculatingBazi.value = false
+  }
+}
+
+const fillDefaultBirthProfile = () => {
+  settings.value.calendar_birth_date = '1992-06-25'
+  settings.value.calendar_birth_time = '07:40'
+  settings.value.calendar_calendar_type = 'solar'
+  settings.value.calendar_gender = 'male'
+  settings.value.calendar_birth_province = '北京市'
+  settings.value.calendar_birth_city = '北京市'
+  settings.value.calendar_birth_longitude = 116.4
+  settings.value.calendar_true_solar_time = '07:26'
+  syncSolarDropdowns('1992-06-25')
+  handleBirthInfoChange()
+  showToast('已填入参考出生档案 (1992-06-25 07:40 男 北京市)')
+}
+
+const resetDefaultCalendarPrompt = () => {
+  settings.value.calendar_ai_prompt_template = DEFAULT_CALENDAR_AI_PROMPT
+  showToast('已恢复投资日历默认提示词')
+}
+
+const insertPromptVar = (varName) => {
+  if (!settings.value.calendar_ai_prompt_template) {
+    settings.value.calendar_ai_prompt_template = ''
+  }
+  settings.value.calendar_ai_prompt_template += ` ${varName}`
+  showToast(`已插入变量 ${varName}`)
+}
+
+const testCalendarAi = async () => {
+  testingCalendarAi.value = true
+  calendarAiTestResult.value = null
+  try {
+    await api.updateSettings(settings.value)
+    const res = await api.generateCalendarAiAdvice({})
+    calendarAiTestResult.value = {
+      success: res.success,
+      message: res.success ? `✅ 今日AI研判测试成功：\n${res.advice?.suggestion}` : `❌ ${res.message}`
+    }
+    showToast(res.success ? '✅ 投资日历 AI 研判测试成功！' : '❌ ' + (res.message || '测试失败'))
+  } catch (e) {
+    const detailMsg = e.response?.data?.detail || e.message || '网络连接异常'
+    calendarAiTestResult.value = { success: false, message: '请求失败：' + detailMsg }
+    showToast('❌ 测试投资日历 AI 研判失败')
+  } finally {
+    testingCalendarAi.value = false
+  }
 }
 
 onMounted(fetchSettings)
@@ -1568,4 +2196,291 @@ input:checked + .slider:before {
   margin: 0 auto;
 }
 @keyframes rotate { 100% { transform: rotate(360deg); } }
+
+/* 🌟 生辰八字与真太阳时排盘卡片专属样式 */
+.true-solar-box {
+  background: rgba(0, 0, 0, 0.25);
+  border: 1px solid var(--border-glass);
+  padding: 8px 14px;
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  font-size: 0.88rem;
+}
+
+.four-pillars-cards {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 12px;
+  margin-top: 8px;
+}
+
+.pillar-card {
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid var(--border-glass);
+  border-radius: 10px;
+  padding: 12px 10px;
+  text-align: center;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  transition: all 0.2s;
+}
+
+.pillar-card:hover {
+  background: rgba(255, 255, 255, 0.06);
+  border-color: rgba(255, 255, 255, 0.2);
+}
+
+.pillar-card.day-pillar-card {
+  border-color: var(--accent-primary);
+  background: rgba(0, 212, 255, 0.05);
+  box-shadow: 0 0 15px rgba(0, 212, 255, 0.1);
+}
+
+.pillar-title {
+  font-size: 0.78rem;
+  color: var(--text-secondary);
+}
+
+.pillar-val-input {
+  font-size: 1.35rem;
+  font-weight: 700;
+  color: var(--text-primary);
+  background: transparent;
+  border: 1px dashed transparent;
+  border-radius: 6px;
+  text-align: center;
+  width: 100%;
+  max-width: 90px;
+  padding: 2px 4px;
+  transition: all 0.2s;
+}
+
+.pillar-val-input:focus {
+  background: rgba(0, 0, 0, 0.4);
+  border-color: var(--accent-primary);
+  outline: none;
+}
+
+.pillar-sub {
+  font-size: 0.75rem;
+  color: var(--text-secondary);
+}
+
+.bazi-meta-summary {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+  background: rgba(255, 255, 255, 0.02);
+  border: 1px solid var(--border-glass);
+  padding: 10px 16px;
+  border-radius: 10px;
+}
+
+.meta-pill {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.85rem;
+}
+
+.meta-pill .label {
+  color: var(--text-secondary);
+}
+
+.meta-pill .val {
+  font-weight: 600;
+}
+
+.wuxing-tags {
+  display: flex;
+  gap: 6px;
+}
+
+.wx-tag {
+  background: rgba(255, 255, 255, 0.08);
+  border-radius: 4px;
+  padding: 1px 6px;
+  font-size: 0.78rem;
+  color: var(--accent-primary);
+}
+
+/* 紧凑型日历与生辰八字布局 */
+.compact-card {
+  padding: 16px 20px;
+}
+
+.compact-flow-box {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.compact-row {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.compact-group {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.compact-group label {
+  margin: 0;
+  font-size: 0.82rem;
+  color: var(--text-secondary);
+  white-space: nowrap;
+}
+
+.date-convert-tip {
+  width: 100%;
+  flex-basis: 100%;
+  font-size: 0.82rem;
+  margin-top: 2px;
+  margin-bottom: 4px;
+  padding: 3px 8px;
+  background: rgba(0, 212, 255, 0.05);
+  border-radius: 4px;
+  border-left: 2px solid var(--accent-primary);
+  display: flex;
+  align-items: center;
+}
+
+.compact-bazi-bar {
+  background: rgba(255, 255, 255, 0.02);
+  border: 1px solid var(--border-glass);
+  border-radius: 6px;
+  padding: 8px 12px;
+}
+
+.bazi-pillars-row {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.compact-pillar-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: rgba(0, 0, 0, 0.25);
+  border: 1px solid var(--border-glass);
+  border-radius: 6px;
+  padding: 2px 8px;
+  font-size: 0.85rem;
+}
+
+.compact-pillar-pill.active-day-master {
+  border-color: var(--accent-primary);
+  background: rgba(0, 212, 255, 0.08);
+  box-shadow: 0 0 8px rgba(0, 212, 255, 0.15);
+}
+
+.compact-pillar-pill .p-name {
+  font-size: 0.76rem;
+  color: var(--text-secondary);
+}
+
+.compact-bazi-input {
+  background: transparent;
+  border: 1px dashed rgba(255, 255, 255, 0.25);
+  border-radius: 4px;
+  width: 50px;
+  text-align: center;
+  color: var(--text-primary);
+  font-size: 0.95rem;
+  font-weight: 600;
+  padding: 1px 2px;
+}
+
+.compact-bazi-input:focus {
+  border-color: var(--accent-primary);
+  outline: none;
+  background: rgba(0, 0, 0, 0.5);
+}
+
+.compact-wx-counts {
+  display: flex;
+  gap: 4px;
+  margin-left: auto;
+}
+
+.compact-wx-counts .wx-item {
+  background: rgba(255, 255, 255, 0.06);
+  padding: 1px 6px;
+  border-radius: 4px;
+  font-size: 0.78rem;
+  color: var(--accent-primary);
+}
+
+.compact-actions-row {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.form-control-sm {
+  padding: 4px 8px;
+  font-size: 0.83rem;
+  height: 32px;
+}
+
+/* 提示词模板插值变量标签徽章 */
+.prompt-vars-list {
+  font-size: 0.78rem;
+}
+
+.vars-title {
+  color: var(--text-secondary);
+  font-size: 0.75rem;
+  margin-bottom: 6px;
+  display: block;
+}
+
+.vars-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.var-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid var(--border-glass);
+  border-radius: 4px;
+  padding: 3px 8px;
+  font-size: 0.78rem;
+  cursor: pointer;
+  transition: all 0.2s;
+  user-select: none;
+}
+
+.var-chip:hover {
+  background: rgba(0, 212, 255, 0.12);
+  border-color: var(--accent-primary);
+  transform: translateY(-1px);
+}
+
+.var-chip .var-label {
+  color: var(--text-secondary);
+  font-weight: 500;
+}
+
+.var-chip code {
+  color: var(--accent-primary);
+  font-weight: 600;
+  background: transparent;
+  padding: 0;
+}
 </style>
