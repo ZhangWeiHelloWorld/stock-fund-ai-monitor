@@ -1263,3 +1263,31 @@ def verify_ai_advice(date_str: str, verified_status: str, verified_notes: str = 
         return {"success": True, "message": f"已成功保存 {date_str} 的实盘核验结论与复盘笔记"}
     else:
         return {"success": False, "message": f"未找到 {date_str} 的 AI 建议记录"}
+
+
+def delete_calendar_ai_advice(advice_id: int, user_id: int = 1) -> Dict[str, Any]:
+    """删除指定的 AI 研判建议记录及其关联信息"""
+    conn = sqlite3.connect(DB_PATH)
+    cursor = conn.cursor()
+    cursor.execute('''
+        SELECT id, date, time_slot, generated_at 
+        FROM calendar_ai_advice 
+        WHERE id = ? AND user_id = ?
+    ''', (advice_id, user_id))
+    row = cursor.fetchone()
+    if not row:
+        conn.close()
+        return {"success": False, "message": "未找到指定的建议记录"}
+
+    date_val = row[1]
+    time_slot_val = row[2]
+    cursor.execute("DELETE FROM calendar_ai_advice WHERE id = ? AND user_id = ?", (advice_id, user_id))
+    conn.commit()
+    conn.close()
+
+    return {
+        "success": True,
+        "message": f"已成功删除【{date_val} {time_slot_val}】的研判建议",
+        "deleted_id": advice_id,
+        "date": date_val
+    }

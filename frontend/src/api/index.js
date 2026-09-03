@@ -106,6 +106,7 @@ export default {
   getCalendarMonth: (year, month) => api.get(`/calendar/month?year=${year}&month=${month}`).then(res => res.data),
   getCalendarDay: (date) => api.get(`/calendar/day/${date}`).then(res => res.data),
   generateCalendarAiAdvice: (data) => api.post('/calendar/ai-advice', data).then(res => res.data),
+  deleteCalendarAiAdvice: (id) => api.delete(`/calendar/ai-advice/${id}`).then(res => res.data),
   verifyCalendarAiAdvice: (date, data) => api.put(`/calendar/ai-advice/${date}/verify`, data).then(res => res.data),
   calculateCalendarBazi: (data) => api.post('/calendar/calculate-bazi', data).then(res => res.data),
   getCalendarCities: () => api.get('/calendar/cities').then(res => res.data)

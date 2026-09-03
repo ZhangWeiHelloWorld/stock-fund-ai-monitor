@@ -9,7 +9,8 @@ from services.calendar_service import (
     get_month_calendar_data,
     get_day_detail,
     generate_calendar_ai_advice,
-    verify_ai_advice
+    verify_ai_advice,
+    delete_calendar_ai_advice
 )
 
 router = APIRouter(prefix="/api/calendar", tags=["calendar"])
@@ -131,3 +132,21 @@ async def update_advice_verification(
     except Exception as e:
         print(f"[CalendarRouter] Error updating verification: {e}")
         raise HTTPException(status_code=500, detail=f"更新核验结果异常: {str(e)}")
+
+
+@router.delete("/ai-advice/{advice_id}")
+async def delete_ai_advice_endpoint(
+    advice_id: int,
+    current_user: dict = Depends(get_current_user)
+):
+    """删除指定的 AI 研判建议记录及其关联信息"""
+    try:
+        res = delete_calendar_ai_advice(advice_id=advice_id, user_id=current_user['id'])
+        if not res.get("success"):
+            raise HTTPException(status_code=404, detail=res.get("message", "记录不存在"))
+        return res
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"[CalendarRouter] Error deleting ai advice: {e}")
+        raise HTTPException(status_code=500, detail=f"删除建议失败: {str(e)}")

@@ -518,8 +518,8 @@
 
           <!-- 建议内容展示区 -->
           <div v-if="dayDetail?.latest_ai_advice" class="ai-advice-container">
-            <!-- 多时段建议时间线切换器 (若有多次生成) -->
-            <div v-if="validAdviceTimeline.length > 1" class="timeline-switcher mb-3">
+            <!-- 多时段建议时间线切换器 -->
+            <div v-if="validAdviceTimeline.length >= 1" class="timeline-switcher mb-3">
               <span class="text-secondary text-sm mr-2">🕒 研判时段时间线:</span>
               <button 
                 v-for="adv in validAdviceTimeline" 
@@ -528,8 +528,17 @@
                 :class="{ active: activeAdvice?.id === adv.id }"
                 @click="currentViewAdviceId = adv.id"
               >
-                {{ adv.time_slot }} ({{ adv.generated_at?.slice(11, 16) }})
-                <span v-if="adv.is_final" class="final-dot" title="最终收盘定调">★</span>
+                <span class="slot-name">{{ adv.time_slot }} ({{ adv.generated_at?.slice(11, 16) }})</span>
+                <span v-if="adv.is_final" class="final-dot ml-1" title="最终收盘定调">★</span>
+                <!-- 在选中的标签上 增加删除小图标 点击x 可以删除时间点的标签以及相关联的信息 -->
+                <span 
+                  v-if="activeAdvice?.id === adv.id" 
+                  class="delete-adv-btn" 
+                  title="删除此时段研判记录"
+                  @click.stop="handleDeleteAdvice(adv)"
+                >
+                  ✕
+                </span>
               </button>
             </div>
 
@@ -928,6 +937,43 @@ const handleGenerateAiAdvice = async () => {
     alert('AI 建议生成失败: ' + (e.response?.data?.detail || e.message))
   } finally {
     generatingAi.value = false
+  }
+}
+
+// 删除指定的时段研判建议及相关联信息
+const deletingAdvice = ref(false)
+const handleDeleteAdvice = async (adv) => {
+  if (!adv || !adv.id) return
+  const slotName = adv.time_slot || '该时段'
+  const timeStr = adv.generated_at ? adv.generated_at.slice(11, 16) : ''
+  const ok = window.confirm(`确定要删除【${slotName} (${timeStr})】的研判时段标签及其所有关联建议内容吗？\n删除后不可恢复。`)
+  if (!ok) return
+
+  deletingAdvice.value = true
+  try {
+    const res = await api.deleteCalendarAiAdvice(adv.id)
+    if (res.success) {
+      // 重新加载该日详情
+      if (dayDetail.value?.date) {
+        const detail = await api.getCalendarDay(dayDetail.value.date)
+        dayDetail.value = detail
+        // 自动重置或切换当前选中的建议ID
+        if (detail.latest_ai_advice) {
+          currentViewAdviceId.value = detail.latest_ai_advice.id
+        } else {
+          currentViewAdviceId.value = null
+        }
+      }
+      // 刷新日历月份数据标记
+      await loadMonthData()
+    } else {
+      alert('删除失败: ' + (res.message || '未知错误'))
+    }
+  } catch (err) {
+    console.error('Failed to delete advice:', err)
+    alert('删除建议失败: ' + (err.response?.data?.detail || err.message))
+  } finally {
+    deletingAdvice.value = false
   }
 }
 
@@ -1686,6 +1732,9 @@ onMounted(() => {
   font-size: 0.82rem;
   cursor: pointer;
   transition: all 0.2s;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
 }
 
 .timeline-btn:hover {
@@ -1703,6 +1752,29 @@ onMounted(() => {
 .final-dot {
   color: #fbbf24;
   font-weight: bold;
+}
+
+.delete-adv-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  margin-left: 4px;
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 1;
+  border-radius: 50%;
+  background: rgba(0, 0, 0, 0.2);
+  color: #111;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.delete-adv-btn:hover {
+  background: #ef4444;
+  color: #ffffff;
+  transform: scale(1.18);
 }
 
 /* 建议正文结构化卡片 */
