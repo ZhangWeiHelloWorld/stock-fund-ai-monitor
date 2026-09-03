@@ -594,14 +594,19 @@
                   <strong>AI 投顾核心复盘总结与反思意见：</strong>
                 </div>
                 <div class="ai-verdict-content">
-                  <template v-if="dayDetail?.day_profit > 0">
-                    今日实盘走势与早盘决策研判高度呼应。账户核心盈利来源于重仓硬科技赛道（三安光电大单封板、士兰微蓄势推进），生克气象中“印星生水、辰土润金”的顺风气场得到有效变现。持仓策略在早盘震荡期保持战略定力，有效规避了情绪化追涨杀跌与踏空核心主升浪的风险。建议后市继续锁定底仓利润，在关键五行水位上分步止盈。
-                  </template>
-                  <template v-else-if="dayDetail?.day_profit < 0">
-                    今日受外部宏观金融波动与场内资金分化传导，持仓成长品种出现节奏上的洗盘回踩。早盘 AI 提示的“防御控仓、保留充裕流动性”起到了关键的安全垫作用。当前整体持仓估值仍处于中长线优势区间，切忌在分时急跌时盲目割肉，宜耐心等待回踩关键支撑企稳后的逆向分批布局时机。
-                  </template>
+                  <div v-if="aiExtractedVerdict" style="white-space: pre-wrap;">
+                    {{ aiExtractedVerdict }}
+                  </div>
                   <template v-else>
-                    今日时空气场纯和，市场整体呈缩量震荡整固格局，持仓净值基本保持静止。AI 建议保持现有仓位不动，多看少动，密切关注盘后全球外盘流动性与宏观金融要闻传导，蓄势待发。
+                    <span v-if="dayDetail?.day_profit > 0">
+                      今日实盘走势与早盘决策研判高度呼应。账户核心盈利来源于重仓硬科技赛道（三安光电大单封板、士兰微蓄势推进），生克气象中“印星生水、辰土润金”的顺风气场得到有效变现。持仓策略在早盘震荡期保持战略定力，有效规避了情绪化追涨杀跌与踏空核心主升浪的风险。建议后市继续锁定底仓利润，在关键五行水位上分步止盈。
+                    </span>
+                    <span v-else-if="dayDetail?.day_profit < 0">
+                      今日受外部宏观金融波动与场内资金分化传导，持仓成长品种出现节奏上的洗盘回踩。早盘 AI 提示的“防御控仓、保留充裕流动性”起到了关键的安全垫作用。当前整体持仓估值仍处于中长线优势区间，切忌在分时急跌时盲目割肉，宜耐心等待回踩关键支撑企稳后的逆向分批布局时机。
+                    </span>
+                    <span v-else>
+                      今日时空气场纯和，市场整体呈缩量震荡整固格局，持仓净值基本保持静止。AI 建议保持现有仓位不动，多看少动，密切关注盘后全球外盘流动性与宏观金融要闻传导，蓄势待发。
+                    </span>
                   </template>
                 </div>
               </div>
@@ -781,6 +786,17 @@ const parsedNewsEvents = computed(() => {
     }
   }
   return items
+})
+
+// 提取 AI 建议中的实盘复盘与客观总结段落（若模型输出包含）
+const aiExtractedVerdict = computed(() => {
+  if (!activeAdvice.value?.suggestion) return ''
+  const text = activeAdvice.value.suggestion
+  const m = text.match(/(?:[🤖💡🎯📝]\s*【[^】]*(?:复盘|核验|总结|反思)[^】]*】)([\s\S]*?)(?=(?:[☯️📊🎯🔮🛡️💡📝⚡🪐📰]\s*【|$))/i)
+  if (m && m[1].trim()) {
+    return m[1].trim()
+  }
+  return ''
 })
 
 // 结构化解析理财建议要点
