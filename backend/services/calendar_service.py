@@ -1007,8 +1007,8 @@ async def get_day_detail(date_str: str, user_id: int = 1) -> Dict[str, Any]:
         "primary_shensha": primary_shensha,
         "financial_advice": financial_advice,
         "sector_resonance": sector_resonance,
-        "ai_advice_timeline": advice_rows,
-        "latest_ai_advice": advice_rows[-1] if advice_rows else None
+        "ai_advice_timeline": [r for r in advice_rows if r.get('suggestion', '').strip()] or advice_rows,
+        "latest_ai_advice": [r for r in advice_rows if r.get('suggestion', '').strip()][-1] if [r for r in advice_rows if r.get('suggestion', '').strip()] else (advice_rows[-1] if advice_rows else None)
     }
 
 
@@ -1158,14 +1158,15 @@ async def generate_calendar_ai_advice(date_str: Optional[str] = None, user_id: i
 【今日世界与国内金融重大要闻】：
 {financial_events}
 
-【分析与建议要求】：
-1. ☯️【五行气场与持仓行业共振】：分析今日干支与卦象对投资者日主的生克制化，以及对持仓资产所处行业（半导体科技、新能源/锂电、AI/数字经济等）的五行利弊影响；
-2. 🌍【国内外宏观金融要闻传导】：研判全球资本市场风向及国内政策/大盘资金面变动，对持仓品种产生的利好或利空冲击；
-3. 🎯【今日终极投资操作建议】：明确给出针对当前持仓的具体操作决策（如：逢高止盈减仓、逆势分批低吸、卧倒坚守、防范刑冲洗盘风险等），并给出仓位控制指引；
-4. 🔮【次日/后市关键观察信号】：给出投资者接下来的关键防守位或进攻观察点。
+【分析与建议核心要求】：
+1. ☯️【五行气场与持仓行业共振】：结合今日流日干支与值日卦象，分析对投资者日主与命局的五行生克利弊，以及对持仓股票/基金行业（半导体芯片、AI算力成长、新能源锂电等）的深层气场共振；
+2. 📰【国内外重大金融要闻深度联动与持仓影响解读】：必须紧密结合上方抓取的今日最新重大金融要闻，逐条或分板块深度解读对投资者当前具体持仓（如半导体、公募基金、权重成长标的）的直接利好或利空传导，阐明逻辑，给出明确的消息面应对举措（严禁只罗列新闻，必须将新闻与持仓操作紧密结合！）；
+3. 🎯【今日终极投资操作建议与仓位策略】：结合上述五行气场与金融要闻，对当前每一只持仓股票与基金明确给出具体操作决策（如：逢高止盈减仓、逆势分批低吸、卧倒坚守、防范分时洗盘等），并给出明确的建议总仓位比例；
+4. 🔮【次日/后市关键观察信号与防守线】：给出大盘与关键持仓个股接下来的防守位、突破点或外部宏观变量观察哨；
+5. 🤖【AI 智能实盘复盘核验与深度总结意见】：AI 站在专业投资顾问视角，结合今日大盘实际指数表现与投资者账户全天真实盈亏，客观总结今日研判成败得失（为何盈利或亏损），并给出 AI 自身的深度反思与理性改进操作意见。
 
 排版要求：
-- 请使用清晰工整的段落与 Emoji，语言专业有力、逻辑严密、切中要害，便于随时复盘核验。"""
+- 请使用清晰工整的章节标题与 Emoji，语言专业有力、逻辑严密、切中要害，便于随时复盘核验。"""
 
     prompt = raw_prompt_template.format(
         bazi_info=bazi_info_text,
