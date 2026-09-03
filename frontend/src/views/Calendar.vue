@@ -26,6 +26,24 @@
           <button class="btn btn-primary btn-sm" @click="goToday">今日</button>
         </div>
 
+        <!-- 持仓标的筛选下拉框 (默认全部持仓，可单选具体股票或基金) -->
+        <div class="holding-select-wrapper">
+          <label class="holding-select-label">🎯 标的:</label>
+          <select v-model="selectedHoldingCode" class="holding-select">
+            <option value="all">📊 全部持仓</option>
+            <optgroup v-if="holdingStockOptions.length" label="股票持仓">
+              <option v-for="s in holdingStockOptions" :key="s.code" :value="s.code">
+                📈 {{ s.name }} ({{ s.code }})
+              </option>
+            </optgroup>
+            <optgroup v-if="holdingFundOptions.length" label="基金持仓">
+              <option v-for="f in holdingFundOptions" :key="f.code" :value="f.code">
+                📉 {{ f.name }} ({{ f.code }})
+              </option>
+            </optgroup>
+          </select>
+        </div>
+
         <!-- 显隐与显示模式开关 -->
         <div class="display-toggle-group">
           <div class="toggle-pill">
@@ -78,12 +96,15 @@
     <!-- 当月战绩与命理统计概览 -->
     <div class="glass-card summary-banner mb-4">
       <div class="summary-col">
-        <span class="label">当月累计收益</span>
+        <span class="label">
+          当月累计收益
+          <span v-if="selectedHoldingCode !== 'all'" class="text-accent" style="font-size: 0.78rem;"> (单标的)</span>
+        </span>
         <span 
           class="val num-val" 
-          :class="summaryData.monthly_total_pnl > 0 ? 'text-red' : summaryData.monthly_total_pnl < 0 ? 'text-green' : 'text-secondary'"
+          :class="displaySummary.monthly_total_pnl > 0 ? 'text-red' : displaySummary.monthly_total_pnl < 0 ? 'text-green' : 'text-secondary'"
         >
-          {{ summaryData.monthly_total_pnl > 0 ? '+' : '' }}{{ formatNumber(summaryData.monthly_total_pnl) }} 元
+          {{ displaySummary.monthly_total_pnl > 0 ? '+' : '' }}{{ formatNumber(displaySummary.monthly_total_pnl) }} 元
         </span>
       </div>
 
@@ -92,9 +113,9 @@
       <div class="summary-col">
         <span class="label">交易天数 / 胜率</span>
         <span class="val">
-          {{ summaryData.trading_days }} 天 
-          <span class="sub-val" v-if="summaryData.trading_days > 0">
-            (胜率 <strong class="text-accent">{{ summaryData.win_rate }}%</strong>，{{ summaryData.up_days }}涨 / {{ summaryData.down_days }}跌)
+          {{ displaySummary.trading_days }} 天 
+          <span class="sub-val" v-if="displaySummary.trading_days > 0">
+            (胜率 <strong class="text-accent">{{ displaySummary.win_rate }}%</strong>，{{ displaySummary.up_days }}涨 / {{ displaySummary.down_days }}跌)
           </span>
         </span>
       </div>
@@ -168,16 +189,16 @@
 
           <!-- 收益区域 (仅交易日) -->
           <div class="cell-pnl-area">
-            <template v-if="item.is_trading && item.has_pnl_data">
+            <template v-if="item.is_trading && getDayDisplayPnl(item).hasData">
               <span 
                 class="pnl-val"
-                :class="item.day_profit > 0 ? 'text-red' : item.day_profit < 0 ? 'text-green' : 'text-secondary'"
+                :class="getDayDisplayPnl(item).profit > 0 ? 'text-red' : getDayDisplayPnl(item).profit < 0 ? 'text-green' : 'text-secondary'"
               >
                 <template v-if="profitDisplayMode === 'amount'">
-                  {{ item.day_profit > 0 ? '+' : '' }}{{ formatCompact(item.day_profit) }}
+                  {{ getDayDisplayPnl(item).profit > 0 ? '+' : '' }}{{ formatCompact(getDayDisplayPnl(item).profit) }}
                 </template>
                 <template v-else>
-                  {{ item.day_profit_pct > 0 ? '+' : '' }}{{ item.day_profit_pct.toFixed(2) }}%
+                  {{ getDayDisplayPnl(item).pct > 0 ? '+' : '' }}{{ getDayDisplayPnl(item).pct.toFixed(2) }}%
                 </template>
               </span>
             </template>
@@ -682,6 +703,20 @@ const yearOptions = computed(() => {
   return years
 })
 
+// 持仓标的筛选下拉框 (默认全部持仓，单选)
+const selectedHoldingCode = ref('all')
+const availableHoldings = ref([
+  { code: 'all', name: '全部持仓', type: 'all' }
+])
+
+const holdingStockOptions = computed(() => {
+  return availableHoldings.value.filter(h => h.type === 'stock')
+})
+
+const holdingFundOptions = computed(() => {
+  return availableHoldings.value.filter(h => h.type === 'fund')
+})
+
 // 月度日历数据
 const monthDays = ref([])
 const summaryData = reactive({
@@ -692,6 +727,59 @@ const summaryData = reactive({
   win_rate: 0,
   auspicious_count: 0,
   inauspicious_count: 0
+})
+
+// 根据当前选中的标的获取单日展示收益与涨跌幅
+const getDayDisplayPnl = (item) => {
+  if (!item) return { hasData: false, profit: 0, pct: 0 }
+  if (selectedHoldingCode.value === 'all') {
+    return {
+      hasData: item.has_pnl_data,
+      profit: item.day_profit || 0,
+      pct: item.day_profit_pct || 0
+    }
+  }
+  const h = item.holdings?.[selectedHoldingCode.value]
+  if (h) {
+    return {
+      hasData: true,
+      profit: h.day_profit || 0,
+      pct: h.day_profit_pct || 0
+    }
+  }
+  return { hasData: false, profit: 0, pct: 0 }
+}
+
+// 顶部统计概览：支持按全部持仓或单选标的动态联动计算
+const displaySummary = computed(() => {
+  if (selectedHoldingCode.value === 'all') {
+    return summaryData
+  }
+  let totalPnl = 0
+  let tradingDays = 0
+  let upDays = 0
+  let downDays = 0
+  
+  for (const day of monthDays.value) {
+    if (!day.is_trading) continue
+    const h = day.holdings?.[selectedHoldingCode.value]
+    if (h && (h.day_profit !== undefined && h.day_profit !== null)) {
+      tradingDays++
+      totalPnl += h.day_profit
+      if (h.day_profit > 0.01) upDays++
+      else if (h.day_profit < -0.01) downDays++
+    }
+  }
+  const winRate = tradingDays > 0 ? Math.round((upDays / tradingDays) * 100) : 0
+  return {
+    monthly_total_pnl: Math.round(totalPnl * 100) / 100,
+    trading_days: tradingDays,
+    up_days: upDays,
+    down_days: downDays,
+    win_rate: winRate,
+    auspicious_count: summaryData.auspicious_count,
+    inauspicious_count: summaryData.inauspicious_count
+  }
 })
 
 // 计算星期对齐
@@ -839,6 +927,10 @@ const loadMonthData = async () => {
     const res = await api.getCalendarMonth(currentYear.value, currentMonth.value)
     monthDays.value = res.days || []
     Object.assign(summaryData, res.summary || {})
+
+    if (res.available_holdings && res.available_holdings.length) {
+      availableHoldings.value = res.available_holdings
+    }
     
     if (res.settings_display) {
       profitDisplayMode.value = res.settings_display.profit_display_mode || 'amount'
@@ -1071,6 +1163,38 @@ onMounted(() => {
   color: var(--text-primary);
   font-size: 0.95rem;
   cursor: pointer;
+}
+
+.holding-select-wrapper {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background: var(--bg-card);
+  border: 1px solid var(--border-glass);
+  padding: 5px 10px;
+  border-radius: 8px;
+}
+
+.holding-select-label {
+  font-size: 0.82rem;
+  color: var(--text-secondary);
+  white-space: nowrap;
+}
+
+.holding-select {
+  background: transparent;
+  border: none;
+  color: var(--text-primary);
+  font-size: 0.86rem;
+  font-weight: 600;
+  outline: none;
+  cursor: pointer;
+}
+
+.holding-select option,
+.holding-select optgroup {
+  background: #1e222d;
+  color: #e2e8f0;
 }
 
 .display-toggle-group {

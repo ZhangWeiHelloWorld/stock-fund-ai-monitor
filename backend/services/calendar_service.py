@@ -699,6 +699,34 @@ async def get_month_calendar_data(year: int, month: int, user_id: int = 1) -> Di
         ai_meta = ai_advice_summary.get(date_str, {})
         has_ai_advice = ai_meta.get('advice_count', 0) > 0
 
+        # 标的明细数据提取 (用于持仓下拉单选)
+        day_holdings = {}
+        if is_today and today_overview:
+            for s in today_overview.get('stocks', []):
+                if s.get('is_holding'):
+                    day_holdings[s['code']] = {
+                        'code': s['code'],
+                        'name': s.get('name', ''),
+                        'type': '股票',
+                        'shares': s.get('shares', 0),
+                        'price': s.get('current_price', 0),
+                        'day_profit': round(s.get('day_profit', 0.0), 2),
+                        'day_profit_pct': round(s.get('change_pct', 0.0), 2)
+                    }
+            for f in today_overview.get('funds', []):
+                if f.get('is_holding'):
+                    day_holdings[f['code']] = {
+                        'code': f['code'],
+                        'name': f.get('name', ''),
+                        'type': '基金',
+                        'shares': f.get('shares', 0),
+                        'price': f.get('current_nav', 0),
+                        'day_profit': round(f.get('day_profit', 0.0), 2),
+                        'day_profit_pct': round(f.get('change_pct', 0.0), 2)
+                    }
+        elif date_str in cached_180 and cached_180[date_str].get('holdings'):
+            day_holdings = cached_180[date_str]['holdings']
+
         days_list.append({
             "date": date_str,
             "day": d,
@@ -711,6 +739,7 @@ async def get_month_calendar_data(year: int, month: int, user_id: int = 1) -> Di
             "day_profit_pct": day_profit_pct,
             "total_asset": total_asset,
             "has_pnl_data": has_pnl_data,
+            "holdings": day_holdings,
             "ganzhi": ganzhi_data["ganzhi"],
             "stem": ganzhi_data["stem"],
             "branch": ganzhi_data["branch"],
@@ -735,10 +764,50 @@ async def get_month_calendar_data(year: int, month: int, user_id: int = 1) -> Di
     # 月度统计指标
     win_rate = round((up_days_count / trading_days_count * 100) if trading_days_count > 0 else 0.0, 1)
 
+    # 构造可选持仓标的列表 (用于前端下拉框单选)
+    available_holdings = [
+        {"code": "all", "name": "全部持仓", "type": "all"}
+    ]
+    seen_codes = set()
+    if today_overview:
+        for s in today_overview.get('stocks', []):
+            if s.get('is_holding') and s['code'] not in seen_codes:
+                seen_codes.add(s['code'])
+                available_holdings.append({
+                    "code": s['code'],
+                    "name": s['name'],
+                    "type": "stock",
+                    "shares": s.get('shares', 0)
+                })
+        for f in today_overview.get('funds', []):
+            if f.get('is_holding') and f['code'] not in seen_codes:
+                seen_codes.add(f['code'])
+                available_holdings.append({
+                    "code": f['code'],
+                    "name": f['name'],
+                    "type": "fund",
+                    "shares": f.get('shares', 0)
+                })
+    # 补充缓存中的持仓标的
+    if cached_180:
+        for item in reversed(list(cached_180.values())):
+            if item.get('holdings'):
+                for c_code, c_meta in item['holdings'].items():
+                    if c_code not in seen_codes:
+                        seen_codes.add(c_code)
+                        available_holdings.append({
+                            "code": c_code,
+                            "name": c_meta['name'],
+                            "type": "stock" if c_meta['type'] == '股票' else "fund",
+                            "shares": c_meta.get('shares', 0)
+                        })
+                break
+
     return {
         "year": year,
         "month": month,
         "days": days_list,
+        "available_holdings": available_holdings,
         "summary": {
             "monthly_total_pnl": round(monthly_total_pnl, 2),
             "trading_days": trading_days_count,
