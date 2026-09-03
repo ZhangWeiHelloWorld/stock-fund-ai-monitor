@@ -535,15 +535,21 @@ def get_holdings_sector_resonance(day_info: Dict[str, Any], overview: Dict[str, 
 # ==================== 3. 投资日历数据获取与聚合 ====================
 
 def get_cached_180d_data() -> Dict[str, Dict[str, Any]]:
-    """读取 scratch 目录中的 180 天量化回溯数据（若存在）作为历史数据缓存"""
-    cache_path = '/Users/zhangwei/.gemini/antigravity/scratch/portfolio_180d_data.json'
-    if os.path.exists(cache_path):
-        try:
-            with open(cache_path, 'r', encoding='utf-8') as f:
-                data = json.load(f)
-                return {item['date']: item for item in data}
-        except Exception:
-            return {}
+    """读取 180 天持仓历史量化回溯数据作为历史数据缓存"""
+    candidates = [
+        os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'cache', 'portfolio_180d_data.json'),
+        os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'cache', 'portfolio_180d_data.json'),
+        '/Users/zhangwei/.gemini/antigravity/scratch/portfolio_180d_data.json',
+        '/root/lh/backend/cache/portfolio_180d_data.json'
+    ]
+    for path in candidates:
+        if os.path.exists(path):
+            try:
+                with open(path, 'r', encoding='utf-8') as f:
+                    data = json.load(f)
+                    return {item['date']: item for item in data}
+            except Exception:
+                continue
     return {}
 
 
@@ -587,7 +593,25 @@ async def get_month_calendar_data(year: int, month: int, user_id: int = 1) -> Di
         GROUP BY date
     ''', (user_id, start_date_str, end_date_str))
     ai_advice_summary = {row['date']: dict(row) for row in cursor.fetchall()}
+    
+    # 查询本月初之前的最后一个有效交易日记录，作为跨月初第一天计算当日盈亏的基准 (如9月1日的基准是8月31日)
+    cursor.execute('''
+        SELECT total_asset, total_profit
+        FROM history_profits
+        WHERE user_id = ? AND date < ? AND total_asset > 0
+        ORDER BY date DESC
+        LIMIT 1
+    ''', (user_id, start_date_str))
+    prev_db_row = cursor.fetchone()
+    prev_val = round(prev_db_row['total_asset'], 2) if prev_db_row else None
     conn.close()
+
+    # 若数据库无月初前的记录，尝试从 180 天持仓历史缓存中获取月初前最后一个交易日的总资产
+    if prev_val is None and cached_180:
+        earlier_cached = [c for c_date, c in cached_180.items() if c_date < start_date_str and c.get('val', 0) > 0]
+        if earlier_cached:
+            earlier_cached.sort(key=lambda x: x['date'])
+            prev_val = round(earlier_cached[-1]['val'], 2)
     
     # 若包含今天，获取实时持仓概览作为今天的数据
     today_overview = None
@@ -606,8 +630,6 @@ async def get_month_calendar_data(year: int, month: int, user_id: int = 1) -> Di
     down_days_count = 0
     auspicious_count = 0
     inauspicious_count = 0
-    
-    prev_val = None
 
     for d in range(1, last_day_of_month + 1):
         cur_date = date(year, month, d)
@@ -642,23 +664,25 @@ async def get_month_calendar_data(year: int, month: int, user_id: int = 1) -> Di
             cost_basis = total_asset - day_profit if (total_asset - day_profit) > 0 else total_cost
             day_profit_pct = round((day_profit / cost_basis * 100) if cost_basis > 0 else 0.0, 2)
             has_pnl_data = True
-        elif date_str in db_history:
-            h = db_history[date_str]
-            total_asset = round(h.get('total_asset', 0.0), 2)
-            # 计算当日变动
-            if prev_val is not None and prev_val > 0:
-                day_profit = round(total_asset - prev_val, 2)
-                day_profit_pct = round((day_profit / prev_val * 100), 2)
-            else:
-                day_profit = round(h.get('total_profit', 0.0), 2)
-                day_profit_pct = 0.0
-            has_pnl_data = True
-            prev_val = total_asset
         elif date_str in cached_180:
+            # 2. 180天缓存具备基于用户实际持仓与当日真实行情计算的单日盈亏 (chg/chg_pct/val)
             c = cached_180[date_str]
             day_profit = round(c.get('chg', 0.0), 2)
             day_profit_pct = round(c.get('chg_pct', 0.0), 2)
             total_asset = round(c.get('val', 0.0), 2)
+            has_pnl_data = True
+            prev_val = total_asset
+        elif date_str in db_history:
+            # 3. 历史数据库记录：根据前后两天资产差值计算单日变动
+            h = db_history[date_str]
+            total_asset = round(h.get('total_asset', 0.0), 2)
+            if prev_val is not None and prev_val > 0:
+                day_profit = round(total_asset - prev_val, 2)
+                day_profit_pct = round((day_profit / prev_val * 100), 2)
+            else:
+                # 若无前一日基准，绝不能使用累计总利润(total_profit)！
+                day_profit = 0.0
+                day_profit_pct = 0.0
             has_pnl_data = True
             prev_val = total_asset
             
@@ -817,19 +841,24 @@ async def get_day_detail(date_str: str, user_id: int = 1) -> Dict[str, Any]:
             day_profit_pct = round(c.get('chg_pct', 0.0), 2)
             total_asset = round(c.get('val', 0.0), 2)
         elif is_past and is_trading:
-            # 查询 history_profits 表
+            # 查询 history_profits 表并对比前一交易日计算当日盈亏 (绝不能取累计总利润 total_profit)
             try:
                 conn = sqlite3.connect(DB_PATH)
                 conn.row_factory = sqlite3.Row
                 cur = conn.cursor()
                 cur.execute("SELECT total_profit, total_asset FROM history_profits WHERE user_id = ? AND date = ?", (user_id, date_str))
                 h_row = cur.fetchone()
-                conn.close()
                 if h_row:
-                    day_profit = round(h_row['total_profit'], 2)
                     total_asset = round(h_row['total_asset'], 2)
-                    cost_est = total_asset - day_profit if total_asset > day_profit else 500000.0
-                    day_profit_pct = round((day_profit / cost_est * 100) if cost_est > 0 else 0.0, 2)
+                    cur.execute("SELECT total_asset FROM history_profits WHERE user_id = ? AND date < ? AND total_asset > 0 ORDER BY date DESC LIMIT 1", (user_id, date_str))
+                    p_row = cur.fetchone()
+                    if p_row and p_row['total_asset'] > 0:
+                        day_profit = round(total_asset - p_row['total_asset'], 2)
+                        day_profit_pct = round((day_profit / p_row['total_asset'] * 100), 2)
+                    else:
+                        day_profit = 0.0
+                        day_profit_pct = 0.0
+                conn.close()
             except Exception:
                 pass
 
