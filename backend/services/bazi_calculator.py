@@ -72,6 +72,7 @@ CITY_LONGITUDES = {
         "日照市": 119.53, "临沂市": 118.35, "德州市": 116.36, "聊城市": 115.98, "滨州市": 117.97, "菏泽市": 115.48
     },
     "河南省": {
+        "固始县": 115.68, "固始": 115.68,
         "郑州市": 113.63, "开封市": 114.31, "洛阳市": 112.45, "平顶山市": 113.30, "安阳市": 114.35,
         "鹤壁市": 114.29, "新乡市": 113.88, "焦作市": 113.24, "濮阳市": 115.03, "许昌市": 113.83,
         "漯河市": 114.02, "三门峡市": 111.20, "南阳市": 112.52, "商丘市": 115.65, "信阳市": 114.07,
@@ -374,7 +375,7 @@ def calculate_full_bazi(
     lunar_day: Optional[int] = None
 ) -> Dict[str, Any]:
     """
-    输入出生年月日、时间、性别、出生地点，自动完成天文级精确排盘与五行分析：
+    输入出生年月日、时间、性别、出生地点，完成近似历法排盘与传统五行分析：
     - 支持公历/农历双向智能转换与对齐
     - 结合经度计算真太阳时
     - 年柱、月柱、日柱、时柱排盘
@@ -406,7 +407,14 @@ def calculate_full_bazi(
     # 1. 计算出生地经度与真太阳时
     longitude = get_city_longitude(province, city)
     # 与 120°E 的时差：1度经度 = 4分钟 = 240秒
-    offset_seconds = int((longitude - 120.0) * 240)
+    longitude_offset_minutes = (longitude - 120.0) * 4
+    # Approximate equation of time; longitude correction alone gives mean solar time.
+    year_days = (date(dt.year + 1, 1, 1) - date(dt.year, 1, 1)).days
+    gamma = 2 * math.pi / year_days * (dt.timetuple().tm_yday - 1 + (hour - 12) / 24)
+    equation_minutes = 229.18 * (0.000075 + 0.001868 * math.cos(gamma)
+        - 0.032077 * math.sin(gamma) - 0.014615 * math.cos(2 * gamma)
+        - 0.040849 * math.sin(2 * gamma))
+    offset_seconds = round((longitude_offset_minutes + equation_minutes) * 60)
     orig_dt = datetime.datetime.combine(dt, datetime.time(hour, minute))
     solar_dt = orig_dt + datetime.timedelta(seconds=offset_seconds)
     
@@ -544,6 +552,8 @@ def calculate_full_bazi(
         "solar_datetime": solar_dt.strftime("%Y-%m-%d %H:%M:%S"),
         "true_solar_time": true_solar_time_str,
         "time_offset_desc": f"{'+' if offset_seconds >= 0 else ''}{round(offset_seconds / 60, 1)}分钟",
+        "solar_time_method": "longitude_plus_approximate_equation_of_time",
+        "equation_of_time_minutes": round(equation_minutes, 2),
         "four_pillars": {
             "year": year_pillar,
             "month": month_pillar,

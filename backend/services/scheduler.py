@@ -17,6 +17,9 @@ last_push_time = None
 last_morning_review_date = {}
 last_afternoon_review_date = {}
 last_ai_news_push_time = {}
+last_risk_analysis_date = {}
+last_daily_premarket_date = {}
+last_daily_close_indices_date = {}
 
 async def _trigger_review_safe(session_name: str, user_id: int):
     try:
@@ -37,6 +40,31 @@ async def _trigger_ai_news_safe(user_id: int):
             print(f"[Scheduler] 用户 {user_id} AI 新闻持仓影响分析发送失败: {msg}")
     except Exception as e:
         print(f"[Scheduler] 用户 {user_id} AI 新闻持仓影响分析执行异常: {e}")
+
+async def _trigger_risk_analysis_safe(user_id: int):
+    try:
+        from services.om_stw_service import run_daily_official_news_analysis
+        success, msg = await run_daily_official_news_analysis(user_id=user_id)
+        print(f"[Scheduler] 用户 {user_id} 每日官媒舆情风控分析: {msg}")
+    except Exception as e:
+        print(f"[Scheduler] 用户 {user_id} 每日官媒舆情风控分析异常: {e}")
+
+async def _trigger_daily_premarket_snapshot_safe(user_id: int):
+    try:
+        from services.om_stw_service import record_daily_pre_market_risk
+        res = await record_daily_pre_market_risk(user_id=user_id)
+        print(f"[Scheduler] 用户 {user_id} 今日开盘前风险快照记录成功: {res.get('pre_market_level_name')} ({res.get('pre_market_score')}分)")
+    except Exception as e:
+        print(f"[Scheduler] 用户 {user_id} 记录开盘前风险快照异常: {e}")
+
+async def _trigger_daily_close_indices_safe(user_id: int):
+    try:
+        from services.om_stw_service import record_daily_market_close
+        res = await record_daily_market_close(user_id=user_id)
+        print(f"[Scheduler] 用户 {user_id} 今日各指数收盘点数回填成功: {len(res)} 条")
+    except Exception as e:
+        print(f"[Scheduler] 用户 {user_id} 回填收盘点数异常: {e}")
+
 
 def parse_interval_minutes(schedule_val: str) -> int:
     """Parse interval minutes from schedule_val string, enforcing a minimum of 3 minutes."""
@@ -152,10 +180,24 @@ async def check_and_push():
         uid = urow[0]
         settings = get_settings_dict(user_id=uid)
 
-        # 1. 检查 DeepSeek 收盘自动复盘 (11:35 午盘复盘, 15:05 收盘复盘)
+        # 1. 检查交易日开盘前风险快照、收盘点数回填及 DeepSeek 复盘
         if is_trading_day(now):
+            today_str = now.strftime("%Y-%m-%d")
+            # 1.1 开盘前 09:15 自动记录风险快照
+            if now.hour == 9 and now.minute == 15:
+                if last_daily_premarket_date.get(uid) != today_str:
+                    last_daily_premarket_date[uid] = today_str
+                    print(f"[Scheduler] 用户 {uid} 自动触发交易日 09:15 开盘前风险快照记录...")
+                    asyncio.create_task(_trigger_daily_premarket_snapshot_safe(user_id=uid))
+            # 1.2 收盘后 15:05 自动回填当天各指数收盘点数
+            elif now.hour == 15 and now.minute == 5:
+                if last_daily_close_indices_date.get(uid) != today_str:
+                    last_daily_close_indices_date[uid] = today_str
+                    print(f"[Scheduler] 用户 {uid} 自动触发交易日 15:05 各指数收盘点数回填...")
+                    asyncio.create_task(_trigger_daily_close_indices_safe(user_id=uid))
+
+            # 1.3 检查 DeepSeek 交易日复盘 (11:35 午盘复盘, 15:05 收盘复盘)
             if settings.get('deepseek_review_enabled', True):
-                today_str = now.strftime("%Y-%m-%d")
                 if now.hour == 11 and now.minute == 35:
                     if last_morning_review_date.get(uid) != today_str:
                         last_morning_review_date[uid] = today_str
@@ -187,7 +229,24 @@ async def check_and_push():
                 print(f"[Scheduler] 用户 {uid} 触发 AI 新闻持仓影响分析 (设置频率: {news_schedule_val})...")
                 asyncio.create_task(_trigger_ai_news_safe(user_id=uid))
 
-        # 3. 检查普通定时行情快报推送
+        # 3. 检查每日官媒舆情风控定时分析 (默认 20:30，可配置时分)
+        if settings.get('risk_cron_enabled', True):
+            cron_time_str = settings.get('risk_cron_time', '20:30') or '20:30'
+            try:
+                parts = cron_time_str.split(':')
+                cron_hour = int(parts[0])
+                cron_minute = int(parts[1])
+            except Exception:
+                cron_hour, cron_minute = 20, 30
+
+            today_str = now.strftime("%Y-%m-%d")
+            if now.hour == cron_hour and now.minute == cron_minute:
+                if last_risk_analysis_date.get(uid) != today_str:
+                    last_risk_analysis_date[uid] = today_str
+                    print(f"[Scheduler] 用户 {uid} 自动触发每日 {cron_time_str} 官媒舆情风控分析与预警...")
+                    asyncio.create_task(_trigger_risk_analysis_safe(user_id=uid))
+
+        # 4. 检查普通定时行情快报推送
         if not is_trading_time(now):
             continue
 

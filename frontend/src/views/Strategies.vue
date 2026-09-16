@@ -1143,7 +1143,265 @@
                 </div>
               </div>
 
-              <!-- Case E: 自定义多因子 -->
+              <!-- Case E: 天机时空策略 -->
+              <div v-else-if="form.strategy_type === 'tianjit' || form.strategy_type === 'stock_tianjit'" class="param-group-box tianjit-box">
+                <div class="tianjit-header">
+                  <span class="tianjit-icon">🏮</span>
+                  <div>
+                    <div class="tianjit-title">天机时空策略 · 四层信号过滤</div>
+                    <div class="tianjit-subtitle">月度大势滤网 → 流日评分(35~98) → T+1次日前瞻 → 价格触发</div>
+                  </div>
+                </div>
+                <!-- 评分阈值 & 月度大势 -->
+                <div class="tianjit-section">
+                  <div class="tianjit-section-title">📊 评分阈值 &amp; 月度大势滤网</div>
+                  <div class="form-row grid-3">
+                    <div class="form-group">
+                      <label>大吉阈值 S级 (≥分)</label>
+                      <input type="number" class="form-control" v-model.number="form.config.score_threshold_s" min="60" max="98" />
+                    </div>
+                    <div class="form-group">
+                      <label>吉日阈值 A级 (≥分)</label>
+                      <input type="number" class="form-control" v-model.number="form.config.score_threshold_a" min="50" max="90" />
+                    </div>
+                    <div class="form-group">
+                      <label>平日阈值 B级 (≥分)</label>
+                      <input type="number" class="form-control" v-model.number="form.config.score_threshold_b" min="40" max="80" />
+                    </div>
+                  </div>
+                  <div class="form-row grid-2">
+                    <div class="form-group">
+                      <label>逆境月最大仓位 (%)</label>
+                      <input type="number" class="form-control" v-model.number="form.config.pressure_max_position_pct" min="0" max="100" />
+                      <div class="form-hint">逆境五行月强制限仓，默认 30%</div>
+                    </div>
+                    <div class="form-group">
+                      <label>月度大势滤网</label>
+                      <select class="form-control" v-model="form.config.monthly_regime_enabled">
+                        <option :value="true">✅ 启用（推荐）</option>
+                        <option :value="false">❌ 关闭</option>
+                      </select>
+                    </div>
+                  </div>
+                </div>
+                <!-- 四级信号 -->
+                <div class="tianjit-section">
+                  <div class="tianjit-section-title">🎯 四级信号配置</div>
+                  <div class="signal-tier-block signal-s">
+                    <div class="signal-tier-head">
+                      <span class="signal-badge s">S级 · 大吉进攻</span>
+                      <label class="toggle-inline"><input type="checkbox" v-model="form.config.signal_s.enabled" /> 启用</label>
+                    </div>
+                    <div class="form-row grid-3" v-if="form.config.signal_s && form.config.signal_s.enabled">
+                      <div class="form-group">
+                        <label>买入金额 (元)</label>
+                        <input type="number" class="form-control" v-model.number="form.config.signal_s.amount" />
+                      </div>
+                      <div class="form-group">
+                        <label>叠加跌幅要求 (%, 0=无)</label>
+                        <input type="number" step="0.1" class="form-control" v-model.number="form.config.signal_s.price_drop_required" />
+                        <div class="form-hint">0=大吉日无需等跌直接买</div>
+                      </div>
+                      <div class="form-group">
+                        <label>大吉日涨幅止盈 (%)</label>
+                        <input type="number" step="0.1" class="form-control" v-model.number="form.config.signal_s.price_rise_sell" />
+                      </div>
+                    </div>
+                  </div>
+                  <div class="signal-tier-block signal-a">
+                    <div class="signal-tier-head">
+                      <span class="signal-badge a">A级 · 吉日逢低</span>
+                      <label class="toggle-inline"><input type="checkbox" v-model="form.config.signal_a.enabled" /> 启用</label>
+                    </div>
+                    <div class="form-row grid-2" v-if="form.config.signal_a && form.config.signal_a.enabled">
+                      <div class="form-group">
+                        <label>逢低买入金额 (元)</label>
+                        <input type="number" class="form-control" v-model.number="form.config.signal_a.amount" />
+                      </div>
+                      <div class="form-group">
+                        <label>须跌幅 ≥ (%) 才触发</label>
+                        <input type="number" step="0.1" class="form-control" v-model.number="form.config.signal_a.price_drop_required" />
+                        <div class="form-hint">吉日须等跌才买</div>
+                      </div>
+                    </div>
+                  </div>
+                  <div class="signal-tier-block signal-c">
+                    <div class="signal-tier-head">
+                      <span class="signal-badge c">C级 · 冲凶防守</span>
+                      <label class="toggle-inline"><input type="checkbox" v-model="form.config.signal_c.enabled" /> 启用</label>
+                    </div>
+                    <div class="form-row grid-3" v-if="form.config.signal_c && form.config.signal_c.enabled">
+                      <div class="form-group">
+                        <label>基础减仓比例</label>
+                        <select class="form-control" v-model.number="form.config.signal_c.sell_ratio">
+                          <option :value="0.20">减仓 20%</option>
+                          <option :value="0.30">减仓 30%</option>
+                          <option :value="0.40">减仓 40%</option>
+                          <option :value="0.50">减仓 50%</option>
+                        </select>
+                      </div>
+                      <div class="form-group">
+                        <label>叠加跌幅追加减仓 (%)</label>
+                        <input type="number" step="0.1" class="form-control" v-model.number="form.config.signal_c.price_drop_sell_trigger" />
+                      </div>
+                      <div class="form-group">
+                        <label>强制清仓跌幅 (%)</label>
+                        <input type="number" step="0.1" class="form-control" v-model.number="form.config.signal_c.force_clear_on_drop" />
+                        <div class="form-hint">凶日跌超此值直接清仓</div>
+                      </div>
+                    </div>
+                  </div>
+                  <div class="signal-tier-block signal-sha">
+                    <div class="signal-tier-head">
+                      <span class="signal-badge sha">⚡ 伤官/七杀日专项抄底</span>
+                      <label class="toggle-inline"><input type="checkbox" v-model="form.config.sha_enhanced_rules.enabled" /> 启用</label>
+                    </div>
+                    <div class="form-row grid-2" v-if="form.config.sha_enhanced_rules && form.config.sha_enhanced_rules.enabled">
+                      <div class="form-group">
+                        <label>须跌 ≥ (%) 才抄底</label>
+                        <input type="number" step="0.1" class="form-control" v-model.number="form.config.sha_enhanced_rules.buy_drop_pct" />
+                      </div>
+                      <div class="form-group">
+                        <label>抄底金额 (元)</label>
+                        <input type="number" class="form-control" v-model.number="form.config.sha_enhanced_rules.buy_amount" />
+                      </div>
+                    </div>
+                  </div>
+                </div>
+                <!-- T+1 前瞻 -->
+                <div class="tianjit-section tianjit-t1">
+                  <div class="tianjit-section-title">🔮 T+1 下一交易日前瞻信号 <span class="t1-badge">严格跳过周末/休市日</span></div>
+                  <div class="t1-scenarios">
+                    <div class="t1-scenario-item">📈 场景A：今跌+下个交易日大吉 → 增强买入×{{ form.config.t1_lookahead ? form.config.t1_lookahead.tomorrow_boost_multiplier : 1.5 }}</div>
+                    <div class="t1-scenario-item">📉 场景B：今有浮盈+下个交易日凶 → 今日提前减仓</div>
+                    <div class="t1-scenario-item">🌅 场景C：今平淡+下个交易日大吉 → 预建仓 ¥{{ form.config.t1_lookahead ? form.config.t1_lookahead.preview_amount : 1500 }}</div>
+                    <div class="t1-scenario-item">🚀 场景D：连续大吉交易日 → 额外放大×{{ form.config.t1_lookahead ? form.config.t1_lookahead.consecutive_good_boost : 1.2 }}</div>
+                  </div>
+                  <div class="form-row grid-2">
+                    <div class="form-group">
+                      <label>下一交易日前瞻开关</label>
+                      <select class="form-control" v-model="form.config.t1_lookahead.enabled">
+                        <option :value="true">✅ 启用（推荐）</option>
+                        <option :value="false">❌ 关闭</option>
+                      </select>
+                    </div>
+                    <div class="form-group">
+                      <label>场景A 今日跌幅触发 (%)</label>
+                      <input type="number" step="0.1" class="form-control" v-model.number="form.config.t1_lookahead.today_drop_required_pct" />
+                    </div>
+                  </div>
+                  <div v-if="form.config.t1_lookahead && form.config.t1_lookahead.enabled">
+                    <div class="form-row grid-3">
+                      <div class="form-group">
+                        <label>下一交易日大吉阈值 (分)</label>
+                        <input type="number" class="form-control" v-model.number="form.config.t1_lookahead.tomorrow_good_threshold" />
+                        <div class="form-hint">≥此分触发场景A/C/D（周五自动推演周一）</div>
+                      </div>
+                      <div class="form-group">
+                        <label>下一交易日凶日阈值 (分)</label>
+                        <input type="number" class="form-control" v-model.number="form.config.t1_lookahead.tomorrow_bad_threshold" />
+                        <div class="form-hint">&lt;此分触发场景B减仓</div>
+                      </div>
+                      <div class="form-group">
+                        <label>下一交易日极凶阈值 (分)</label>
+                        <input type="number" class="form-control" v-model.number="form.config.t1_lookahead.tomorrow_danger_threshold" />
+                        <div class="form-hint">&lt;此分升级危险减仓</div>
+                      </div>
+                    </div>
+                    <div class="form-row grid-3">
+                      <div class="form-group">
+                        <label>场景A 买入放大系数</label>
+                        <input type="number" step="0.1" class="form-control" v-model.number="form.config.t1_lookahead.tomorrow_boost_multiplier" min="1.0" max="3.0" />
+                      </div>
+                      <div class="form-group">
+                        <label>场景B 提前减仓比例</label>
+                        <select class="form-control" v-model.number="form.config.t1_lookahead.tomorrow_reduce_ratio">
+                          <option :value="0.20">减仓 20%</option>
+                          <option :value="0.25">减仓 25%</option>
+                          <option :value="0.30">减仓 30%</option>
+                          <option :value="0.40">减仓 40%</option>
+                        </select>
+                      </div>
+                      <div class="form-group">
+                        <label>场景C 预建仓金额 (元)</label>
+                        <input type="number" class="form-control" v-model.number="form.config.t1_lookahead.preview_amount" />
+                      </div>
+                    </div>
+                    <div class="form-row grid-2">
+                      <div class="form-group">
+                        <label>场景D 连续大吉系数</label>
+                        <input type="number" step="0.1" class="form-control" v-model.number="form.config.t1_lookahead.consecutive_good_boost" min="1.0" max="2.0" />
+                      </div>
+                      <div class="form-group">
+                        <label>放大系数最高上限</label>
+                        <input type="number" step="0.1" class="form-control" v-model.number="form.config.t1_lookahead.max_boost_cap_multiplier" min="1.0" max="3.0" />
+                      </div>
+                    </div>
+                  </div>
+                </div>
+                <!-- 神煞 & 十神权重 -->
+                <div class="tianjit-section">
+                  <div class="tianjit-section-title">⚖️ 神煞权重（正=吉神加分，负=凶煞扣分）</div>
+                  <div class="shensha-grid" v-if="form.config.shensha_weights">
+                    <div class="shensha-item" v-for="(val, key) in form.config.shensha_weights" :key="key">
+                      <label>{{ key }}</label>
+                      <input type="number" class="form-control sm" v-model.number="form.config.shensha_weights[key]" min="-20" max="20" />
+                    </div>
+                  </div>
+                </div>
+                <div class="tianjit-section">
+                  <div class="tianjit-section-title">🔰 十神权重</div>
+                  <div class="shensha-grid" v-if="form.config.ten_god_weights">
+                    <div class="shensha-item" v-for="(val, key) in form.config.ten_god_weights" :key="key">
+                      <label>{{ key }}</label>
+                      <input type="number" class="form-control sm" v-model.number="form.config.ten_god_weights[key]" min="-15" max="15" />
+                    </div>
+                  </div>
+                </div>
+                <!-- 全局止盈止损 -->
+                <div class="tianjit-section">
+                  <div class="tianjit-section-title">🛡️ 全局止盈止损 &amp; 冷却规则</div>
+                  <div class="form-row grid-3">
+                    <div class="form-group">
+                      <label>全局止损线 (%)</label>
+                      <input type="number" step="0.1" class="form-control" v-model.number="form.config.global_stop_loss_pct" />
+                    </div>
+                    <div class="form-group">
+                      <label>累计止盈目标 (%)</label>
+                      <input type="number" step="0.1" class="form-control" v-model.number="form.config.global_profit_target_pct" />
+                    </div>
+                    <div class="form-group">
+                      <label>止盈卖出比例</label>
+                      <select class="form-control" v-model.number="form.config.global_profit_sell_ratio">
+                        <option :value="0.25">卖出 25%</option>
+                        <option :value="0.40">卖出 40%</option>
+                        <option :value="0.50">卖出 50%</option>
+                        <option :value="1.00">全部清仓</option>
+                      </select>
+                    </div>
+                  </div>
+                  <div class="form-row grid-3">
+                    <div class="form-group">
+                      <label>卖出后重置利润基准</label>
+                      <select class="form-control" v-model="form.config.reset_profit_on_sell" @change="form.config.global_profit_reset = form.config.reset_profit_on_sell">
+                        <option :value="true">✅ 开启重置 (推荐)</option>
+                        <option :value="false">❌ 关闭重置 (维持原成本)</option>
+                      </select>
+                      <div class="form-hint">开启后止盈或减仓将重置持仓浮盈基准，避免连续每天卖出</div>
+                    </div>
+                    <div class="form-group">
+                      <label>买入冷却交易日数</label>
+                      <input type="number" class="form-control" v-model.number="form.config.buy_cooldown_days" min="0" max="10" />
+                    </div>
+                    <div class="form-group">
+                      <label>卖出冷却交易日数</label>
+                      <input type="number" class="form-control" v-model.number="form.config.sell_cooldown_days" min="0" max="10" />
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <!-- Case F: 自定义多因子 -->
               <div v-else class="param-group-box">
                 <div class="form-group">
                   <label>单日跌幅加仓阈值 (%)</label>
@@ -1314,8 +1572,8 @@
         <div class="modal-header">
           <div class="header-with-tag">
             <h3>{{ btForm.asset_type === 'stock' ? '📈 股票量化策略回测工作台' : '💰 基金量化策略回测工作台' }}</h3>
-            <span v-if="btResult" class="bt-summary-tag">
-              标的：{{ btResult.fund_name || btResult.target_name }} ({{ btResult.fund_code || btResult.target_code }}) · {{ btResult.total_days }} 交易日
+            <span v-if="btResult && (btResult.fund_code || btResult.target_code)" class="bt-summary-tag">
+              标的：{{ (btResult.fund_name && btResult.fund_name !== (btResult.fund_code || btResult.target_code)) ? (btResult.fund_name + ' (' + (btResult.fund_code || btResult.target_code) + ')') : (btResult.fund_code || btResult.target_code) }} · {{ btResult.total_days }} 交易日
             </span>
           </div>
           <button class="close-btn" @click="closeBacktestModal">×</button>
@@ -1760,6 +2018,45 @@
             </div>
           </div>
 
+          <!-- 1.5 天机时空八字与次日前瞻信号剖析 (仅天机时空策略有) -->
+          <div class="detail-card mt-3 tianjit-signal-card" v-if="selectedBtTrade.bazi_signal">
+            <div class="detail-card-head" style="margin-bottom: 8px; font-weight: 600; color: #a78bfa;">
+              <span class="icon">🏮</span>
+              <strong>天机时空流日八字与前瞻剖析</strong>
+            </div>
+            <div class="grid-metrics-box">
+              <div class="metric-cell">
+                <span class="m-lbl">流日干支</span>
+                <span class="m-val highlight">{{ selectedBtTrade.bazi_signal.ganzhi }}</span>
+              </div>
+              <div class="metric-cell">
+                <span class="m-lbl">天机综合评分</span>
+                <span class="m-val" :class="selectedBtTrade.bazi_signal.score >= 88 ? 'text-red' : (selectedBtTrade.bazi_signal.score < 60 ? 'text-green' : 'text-warning')">
+                  {{ selectedBtTrade.bazi_signal.score }} 分 ({{ selectedBtTrade.bazi_signal.rating }})
+                </span>
+              </div>
+              <div class="metric-cell">
+                <span class="m-lbl">十神 / 信号标签</span>
+                <span class="m-val">{{ selectedBtTrade.bazi_signal.ten_god }} · {{ selectedBtTrade.bazi_signal.tag }}</span>
+              </div>
+              <div class="metric-cell" v-if="selectedBtTrade.bazi_signal.shenshas && selectedBtTrade.bazi_signal.shenshas.length">
+                <span class="m-lbl">当日临值神煞</span>
+                <span class="m-val text-info">{{ selectedBtTrade.bazi_signal.shenshas.join('、') }}</span>
+              </div>
+              <div class="metric-cell">
+                <span class="m-lbl">月度大势滤网</span>
+                <span class="m-val">{{ selectedBtTrade.bazi_signal.monthly_regime === 'SUPPORT' ? '喜用顺境 (仓位充裕)' : (selectedBtTrade.bazi_signal.monthly_regime === 'PRESSURE' ? '逆境承压 (严控仓位)' : '中性平衡') }}</span>
+              </div>
+            </div>
+            <div class="t1-analysis-box mt-2" v-if="selectedBtTrade.t1_signal && selectedBtTrade.t1_signal.scenario" style="background: rgba(139, 92, 246, 0.12); border-left: 3px solid #8b5cf6; padding: 8px 12px; border-radius: 6px; font-size: 0.88rem; line-height: 1.5; color: var(--text-primary);">
+              <strong>🔮 T+1 下一交易日前瞻：</strong>
+              <span>{{ selectedBtTrade.t1_signal.reason }}</span>
+              <span v-if="selectedBtTrade.t1_signal.next_trading_label || selectedBtTrade.t1_signal.tomorrow_ganzhi" class="ml-1 text-secondary" style="font-size: 0.82rem;">
+                （{{ selectedBtTrade.t1_signal.next_trading_label || '下一交易日' }}预告：{{ selectedBtTrade.t1_signal.next_trading_ganzhi || selectedBtTrade.t1_signal.tomorrow_ganzhi }}，评分 {{ selectedBtTrade.t1_signal.next_trading_score || selectedBtTrade.t1_signal.tomorrow_score }} 分 / {{ selectedBtTrade.t1_signal.next_trading_signal_level || selectedBtTrade.t1_signal.tomorrow_signal_level }}级<span v-if="selectedBtTrade.t1_signal.is_weekend_skipped" style="margin-left: 4px; color: #eab308; font-weight: 600;">[跳过休市]</span>）
+              </span>
+            </div>
+          </div>
+
           <!-- 2. 当日行情与分时价位比对 -->
           <div class="detail-card mt-3">
             <div class="detail-card-head" style="margin-bottom: 8px; font-weight: 600; color: var(--text-primary);">
@@ -2077,7 +2374,9 @@ const getStrategyTypeName = (stype) => {
     stock_dip_profit_take: '跌幅加仓与阶梯止盈',
     stock_smart_grid: '智能网格震荡',
     stock_ma_trend: '均线趋势跟踪',
-    stock_custom: '自定义多因子'
+    stock_custom: '自定义多因子',
+    tianjit: '天机时空策略',
+    stock_tianjit: '天机时空策略'
   }
   return map[stype] || stype
 }
@@ -2088,7 +2387,12 @@ const getStrategyRuleTags = (strat) => {
   const stype = strat.strategy_type
   const tags = []
 
-  if (stype === 'intraday_t' || stype === 'stock_intraday_t') {
+  if (stype === 'tianjit' || stype === 'stock_tianjit') {
+    tags.push('时空择时·四层信号')
+    if (cfg.score_threshold_s) tags.push(`S级大吉 ≥${cfg.score_threshold_s}分`)
+    if (cfg.t1_lookahead?.enabled) tags.push('T+1次日前瞻联动')
+    if (cfg.monthly_regime_enabled) tags.push('月度大势滤网')
+  } else if (stype === 'intraday_t' || stype === 'stock_intraday_t') {
     if (cfg.initial_base_shares) tags.push(`底仓 ${cfg.initial_base_shares}股`)
     if (cfg.t_surge_sell_pct) tags.push(`冲高 ≥ +${cfg.t_surge_sell_pct}% 高抛 ${cfg.t_sell_shares || 300}股`)
     if (cfg.enable_pullback_buyback === false) {
@@ -4215,4 +4519,151 @@ onMounted(async () => {
 
 .mt-2 { margin-top: 8px; }
 .mt-3 { margin-top: 12px; }
+
+/* ── TianJi Timing Strategy Config Styles ── */
+.tianjit-box {
+  border-left: 3px solid #8b5cf6 !important;
+  background: rgba(139, 92, 246, 0.03);
+}
+
+.tianjit-header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 14px;
+  background: linear-gradient(135deg, rgba(139, 92, 246, 0.15) 0%, rgba(59, 130, 246, 0.08) 100%);
+  border-radius: 8px;
+  margin-bottom: 16px;
+  border: 1px solid rgba(139, 92, 246, 0.25);
+}
+
+.tianjit-icon {
+  font-size: 1.8rem;
+  line-height: 1;
+}
+
+.tianjit-title {
+  font-weight: 700;
+  font-size: 1.05rem;
+  color: #c4b5fd;
+}
+
+.tianjit-subtitle {
+  font-size: 0.8rem;
+  color: var(--text-secondary);
+  margin-top: 2px;
+}
+
+.tianjit-section {
+  background: rgba(0, 0, 0, 0.2);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: 8px;
+  padding: 12px 14px;
+  margin-bottom: 14px;
+}
+
+.tianjit-section-title {
+  font-size: 0.88rem;
+  font-weight: 600;
+  color: #e2e8f0;
+  margin-bottom: 10px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.t1-badge {
+  font-size: 0.72rem;
+  background: rgba(16, 185, 129, 0.2);
+  color: #34d399;
+  border: 1px solid rgba(16, 185, 129, 0.3);
+  padding: 2px 8px;
+  border-radius: 12px;
+  font-weight: normal;
+}
+
+.t1-scenarios {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.t1-scenario-item {
+  background: rgba(139, 92, 246, 0.08);
+  border: 1px dashed rgba(139, 92, 246, 0.3);
+  border-radius: 6px;
+  padding: 6px 10px;
+  font-size: 0.8rem;
+  color: #d8b4fe;
+}
+
+.signal-tier-block {
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: 6px;
+  padding: 10px 12px;
+  margin-bottom: 10px;
+  background: rgba(255, 255, 255, 0.015);
+}
+
+.signal-tier-block.signal-s { border-left: 3px solid #ef4444; }
+.signal-tier-block.signal-a { border-left: 3px solid #10b981; }
+.signal-tier-block.signal-c { border-left: 3px solid #f59e0b; }
+.signal-tier-block.signal-sha { border-left: 3px solid #ec4899; }
+
+.signal-tier-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 8px;
+}
+
+.signal-badge {
+  font-size: 0.78rem;
+  font-weight: 600;
+  padding: 2px 8px;
+  border-radius: 4px;
+}
+
+.signal-badge.s { background: rgba(239, 68, 68, 0.2); color: #f87171; }
+.signal-badge.a { background: rgba(16, 185, 129, 0.2); color: #34d399; }
+.signal-badge.c { background: rgba(245, 158, 11, 0.2); color: #fbbf24; }
+.signal-badge.sha { background: rgba(236, 72, 153, 0.2); color: #f472b6; }
+
+.toggle-inline {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.8rem;
+  color: var(--text-secondary);
+  cursor: pointer;
+}
+
+.shensha-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(110px, 1fr));
+  gap: 8px;
+}
+
+.shensha-item {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  background: rgba(255, 255, 255, 0.03);
+  padding: 6px 8px;
+  border-radius: 4px;
+  border: 1px solid rgba(255, 255, 255, 0.04);
+}
+
+.shensha-item label {
+  font-size: 0.72rem;
+  color: var(--text-secondary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.tianjit-signal-card {
+  border-left: 3px solid #8b5cf6;
+}
 </style>

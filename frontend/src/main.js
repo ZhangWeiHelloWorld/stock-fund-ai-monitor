@@ -6,6 +6,7 @@ import Calendar from './views/Calendar.vue'
 import Stocks from './views/Stocks.vue'
 import Funds from './views/Funds.vue'
 import Strategies from './views/Strategies.vue'
+import RiskWarning from './views/RiskWarning.vue'
 import Settings from './views/Settings.vue'
 import Login from './views/Login.vue'
 import './style.css'
@@ -17,6 +18,7 @@ const routes = [
   { path: '/stocks', component: Stocks, name: 'Stocks' },
   { path: '/funds', component: Funds, name: 'Funds' },
   { path: '/strategies', component: Strategies, name: 'Strategies' },
+  { path: '/risk-warning', component: RiskWarning, name: 'RiskWarning' },
   { path: '/settings', component: Settings, name: 'Settings' }
 ]
 

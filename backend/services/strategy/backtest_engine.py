@@ -20,6 +20,8 @@ from services.strategy.fee_calculator import (
     DEFAULT_SUBSCRIPTION_RATE
 )
 from services.strategy.stock_data_provider import calculate_stock_trade_fee, DEFAULT_STOCK_FEE_STRUCTURE
+from services.strategy.tianjit_strategy import run_tianjit_backtest
+
 
 
 def run_backtest(
@@ -79,6 +81,23 @@ def run_backtest(
             "equity_curve": [],
             "trades": []
         }
+
+    # ── 天机时空策略专属引擎（dispatch early）──
+    norm_for_dispatch = norm_strategy_type
+    if norm_for_dispatch in ("tianjit", "stock_tianjit"):
+        # 从 extra_params 或 fee_config 里取 settings（命盘参数）
+        settings = (fee_config or {}).get("_bazi_settings", {})
+        return run_tianjit_backtest(
+            history_data=sorted_history,
+            cfg=strategy_config or {},
+            settings=settings,
+            fee_config=fee_config,
+            is_stock=is_stock,
+            fund_code=fund_code,
+            fund_name=fund_name,
+            strategy_type=strategy_type,
+            asset_type=asset_type,
+        )
 
     # Fee Configuration
     sub_rate = fee_config.get("subscription_rate", DEFAULT_SUBSCRIPTION_RATE) if fee_config else DEFAULT_SUBSCRIPTION_RATE

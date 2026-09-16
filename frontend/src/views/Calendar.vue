@@ -342,13 +342,17 @@
                   <th>标的名称 / 代码</th>
                   <th>持仓份额/股数</th>
                   <th>成本价</th>
-                  <th>当前价/估值</th>
+                  <th>{{ dayDetail?.is_today ? '当前价/估值' : '当日收盘价/净值' }}</th>
                   <th>当日涨跌幅</th>
                   <th>当日贡献盈亏</th>
                 </tr>
               </thead>
               <tbody>
-                <tr v-for="item in dayDetail.holdings_breakdown" :key="item.code">
+                <tr 
+                  v-for="item in dayDetail.holdings_breakdown" 
+                  :key="item.code"
+                  :class="{ 'highlight-holding-row': selectedHoldingCode === item.code }"
+                >
                   <td><span class="badge" :class="item.type === '股票' ? 'badge-stock' : 'badge-fund'">{{ item.type }}</span></td>
                   <td>
                     <strong>{{ item.name }}</strong>
@@ -571,11 +575,31 @@
                   <span v-if="activeAdvice?.is_final" class="badge badge-warning ml-2">★ 终极收盘定调</span>
                   <span class="text-secondary text-sm ml-3">生成时间: {{ activeAdvice?.generated_at }}</span>
                 </div>
-                <span class="card-subtitle-badge">AI 宏观时空决策引擎</span>
+                <div class="advice-actions-right">
+                  <button 
+                    class="btn-view-toggle mr-2" 
+                    @click="showRawMarkdown = !showRawMarkdown" 
+                    :title="showRawMarkdown ? '切换到富文本排版' : '查看 Markdown 源码'"
+                  >
+                    {{ showRawMarkdown ? '👁️ 渲染视图' : '📝 查看源码' }}
+                  </button>
+                  <button 
+                    class="btn-copy-advice" 
+                    @click="copyAdviceText" 
+                    :title="copySuccessText || '复制研判建议全文'"
+                  >
+                    {{ copySuccessText || '📋 复制建议' }}
+                  </button>
+                </div>
               </div>
 
-              <!-- 结构化分块呈现建议正文 -->
-              <div class="ai-advice-sections-container">
+              <!-- 源码模式 -->
+              <div v-if="showRawMarkdown" class="raw-markdown-wrapper">
+                <pre class="raw-markdown-pre">{{ activeAdvice?.suggestion }}</pre>
+              </div>
+
+              <!-- 结构化富文本呈现建议正文 -->
+              <div v-else class="ai-advice-sections-container">
                 <div 
                   v-for="(sec, sIdx) in parsedAdviceSections" 
                   :key="sIdx" 
@@ -584,9 +608,7 @@
                   <div v-if="sec.title" class="ai-block-lead-header">
                     {{ sec.title }}
                   </div>
-                  <div class="ai-block-body">
-                    {{ sec.body }}
-                  </div>
+                  <div class="ai-block-body markdown-rendered" v-html="renderMarkdown(sec.body)"></div>
                 </div>
               </div>
             </div>
@@ -624,9 +646,7 @@
                   <strong>AI 投顾核心复盘总结与反思意见：</strong>
                 </div>
                 <div class="ai-verdict-content">
-                  <div v-if="aiExtractedVerdict" style="white-space: pre-wrap;">
-                    {{ aiExtractedVerdict }}
-                  </div>
+                  <div v-if="aiExtractedVerdict" class="markdown-rendered" v-html="renderMarkdown(aiExtractedVerdict)"></div>
                   <template v-else>
                     <span v-if="dayDetail?.day_profit > 0">
                       今日实盘走势与早盘决策研判高度呼应。账户核心盈利来源于重仓硬科技赛道（三安光电大单封板、士兰微蓄势推进），生克气象中“印星生水、辰土润金”的顺风气场得到有效变现。持仓策略在早盘震荡期保持战略定力，有效规避了情绪化追涨杀跌与踏空核心主升浪的风险。建议后市继续锁定底仓利润，在关键五行水位上分步止盈。
@@ -679,7 +699,54 @@
 
 <script setup>
 import { ref, reactive, computed, onMounted } from 'vue'
+import { marked } from 'marked'
 import api from '../api'
+
+marked.setOptions({
+  gfm: true,
+  breaks: true,
+})
+
+// Markdown 源码展示与复制
+const showRawMarkdown = ref(false)
+const copySuccessText = ref('')
+
+const copyAdviceText = async () => {
+  if (!activeAdvice.value?.suggestion) return
+  try {
+    if (navigator?.clipboard?.writeText) {
+      await navigator.clipboard.writeText(activeAdvice.value.suggestion)
+    } else {
+      throw new Error('Clipboard API not supported')
+    }
+    copySuccessText.value = '✅ 已复制'
+    setTimeout(() => { copySuccessText.value = '' }, 2000)
+  } catch (err) {
+    const textarea = document.createElement('textarea')
+    textarea.value = activeAdvice.value.suggestion
+    textarea.style.position = 'fixed'
+    textarea.style.opacity = '0'
+    document.body.appendChild(textarea)
+    textarea.select()
+    document.execCommand('copy')
+    document.body.removeChild(textarea)
+    copySuccessText.value = '✅ 已复制'
+    setTimeout(() => { copySuccessText.value = '' }, 2000)
+  }
+}
+
+const renderMarkdown = (content) => {
+  if (!content) return ''
+  try {
+    let text = content
+    // 将类似 "一、五行气运..."、"二、国内外要闻..." 等中文章节标题转为 Markdown 三级标题
+    text = text.replace(/^([一二三四五六七八九十]+、\s*.+)$/gm, '### $1')
+    return marked.parse(text)
+  } catch (e) {
+    console.error('Markdown parse error:', e)
+    return content
+  }
+}
 
 // 当前选择的年月
 const today = new Date()
@@ -1926,11 +1993,213 @@ onMounted(() => {
 }
 
 .ai-block-body {
-  font-size: 0.9rem;
+  font-size: 0.92rem;
   line-height: 1.85;
   color: #cbd5e1;
-  white-space: pre-wrap;
   letter-spacing: 0.015em;
+}
+
+.ai-block-body.markdown-rendered {
+  white-space: normal;
+  word-break: break-word;
+}
+
+/* 富文本 Markdown 渲染深度样式 */
+.markdown-rendered h1,
+.markdown-rendered h2,
+.markdown-rendered h3,
+.markdown-rendered h4 {
+  font-weight: 700;
+  color: #f8fafc;
+  margin-top: 18px;
+  margin-bottom: 10px;
+  line-height: 1.4;
+}
+
+.markdown-rendered h1 {
+  font-size: 1.25rem;
+  color: #fff;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+  padding-bottom: 8px;
+}
+
+.markdown-rendered h2 {
+  font-size: 1.12rem;
+  color: var(--accent-primary);
+  border-left: 3px solid var(--accent-primary);
+  padding-left: 10px;
+}
+
+.markdown-rendered h3 {
+  font-size: 1.02rem;
+  color: #38bdf8;
+  border-left: 3px solid rgba(56, 189, 248, 0.6);
+  padding-left: 8px;
+}
+
+.markdown-rendered h4 {
+  font-size: 0.95rem;
+  color: #e2e8f0;
+}
+
+.markdown-rendered p {
+  margin: 10px 0;
+  line-height: 1.85;
+  color: #cbd5e1;
+}
+
+.markdown-rendered blockquote {
+  margin: 14px 0;
+  padding: 12px 18px;
+  background: linear-gradient(135deg, rgba(0, 212, 255, 0.08) 0%, rgba(0, 0, 0, 0.3) 100%);
+  border-left: 4px solid var(--accent-primary);
+  border-radius: 0 8px 8px 0;
+  color: #e2e8f0;
+}
+
+.markdown-rendered blockquote p {
+  margin: 4px 0;
+  color: #e2e8f0;
+}
+
+.markdown-rendered table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 16px 0;
+  font-size: 0.88rem;
+  background: rgba(0, 0, 0, 0.3);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.markdown-rendered thead {
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.markdown-rendered th {
+  color: var(--accent-primary);
+  font-weight: 600;
+  padding: 10px 14px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.12);
+  text-align: left;
+  white-space: nowrap;
+}
+
+.markdown-rendered td {
+  padding: 10px 14px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+  color: #cbd5e1;
+  line-height: 1.6;
+}
+
+.markdown-rendered tr:last-child td {
+  border-bottom: none;
+}
+
+.markdown-rendered tbody tr:hover {
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.markdown-rendered ul,
+.markdown-rendered ol {
+  padding-left: 22px;
+  margin: 10px 0;
+}
+
+.markdown-rendered li {
+  margin: 5px 0;
+  line-height: 1.75;
+  color: #cbd5e1;
+}
+
+.markdown-rendered strong {
+  color: #f1f5f9;
+  font-weight: 600;
+}
+
+.markdown-rendered em {
+  color: #94a3b8;
+  font-style: italic;
+}
+
+.markdown-rendered hr {
+  border: none;
+  border-top: 1px dashed rgba(255, 255, 255, 0.12);
+  margin: 18px 0;
+}
+
+.markdown-rendered code {
+  background: rgba(255, 255, 255, 0.08);
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-family: monospace;
+  font-size: 0.88em;
+  color: var(--accent-primary);
+}
+
+.markdown-rendered pre {
+  background: rgba(0, 0, 0, 0.35);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 8px;
+  padding: 12px 16px;
+  overflow-x: auto;
+  margin: 12px 0;
+}
+
+.markdown-rendered pre code {
+  background: none;
+  padding: 0;
+  color: #e2e8f0;
+}
+
+/* 顶部操作按钮（富文本/源码切换、一键复制） */
+.advice-actions-right {
+  display: flex;
+  align-items: center;
+}
+
+.btn-view-toggle,
+.btn-copy-advice {
+  font-size: 0.78rem;
+  padding: 4px 10px;
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  color: var(--text-secondary);
+  transition: all 0.2s;
+  cursor: pointer;
+}
+
+.btn-view-toggle:hover,
+.btn-copy-advice:hover {
+  background: rgba(0, 212, 255, 0.15);
+  color: var(--accent-primary);
+  border-color: rgba(0, 212, 255, 0.3);
+}
+
+.raw-markdown-wrapper {
+  background: rgba(0, 0, 0, 0.35);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 8px;
+  padding: 16px;
+  overflow-x: auto;
+}
+
+.raw-markdown-pre {
+  font-family: 'JetBrains Mono', Consolas, Monaco, monospace;
+  font-size: 0.86rem;
+  line-height: 1.7;
+  color: #94a3b8;
+  white-space: pre-wrap;
+  word-break: break-all;
+  margin: 0;
+}
+
+/* 单标的筛选行高亮 */
+.highlight-holding-row {
+  background: rgba(0, 212, 255, 0.1) !important;
+  box-shadow: inset 3px 0 0 var(--accent-primary);
 }
 
 /* AI 实盘复盘核验与深度总结意见 */

@@ -154,7 +154,8 @@ async def fetch_stock_history(stock_code: str, force_refresh: bool = False) -> D
     # 1. Check in-memory cache
     if not force_refresh and stock_code in _MEM_CACHE:
         cached = _MEM_CACHE[stock_code]
-        if now_ts - cached.get("cached_at", 0) < CACHE_TTL_SECONDS:
+        if (now_ts - cached.get("cached_at", 0) < CACHE_TTL_SECONDS
+                and cached["data"].get("source") == "tencent_qfq"):
             return cached["data"]
 
     # 2. Check local disk cache
@@ -165,8 +166,9 @@ async def fetch_stock_history(stock_code: str, force_refresh: bool = False) -> D
             if now_ts - mtime < CACHE_TTL_SECONDS:
                 with open(cache_file, "r", encoding="utf-8") as f:
                     data = json.load(f)
-                    _MEM_CACHE[stock_code] = {"cached_at": mtime, "data": data}
-                    return data
+                    if data.get("source") == "tencent_qfq":
+                        _MEM_CACHE[stock_code] = {"cached_at": mtime, "data": data}
+                        return data
         except Exception as e:
             print(f"[StockDataProvider] Error reading disk cache for {stock_code}: {e}")
 
@@ -218,21 +220,20 @@ async def fetch_stock_history(stock_code: str, force_refresh: bool = False) -> D
     except Exception as e:
         print(f"[StockDataProvider] Remote fetch error for {stock_code}: {e}")
 
-    # Fallback to Sina Quote for real name if needed
+    if not history:
+        raise ValueError("无法获取真实股票历史行情，已停止回测；不使用模拟价格替代")
+
+    # Fetch a display name only after real history has been obtained.
     try:
         from services.market_service import fetch_stock_data
         quote = await fetch_stock_data([symbol])
         if symbol in quote:
             stock_name = quote[symbol].get("name") or stock_code
-            if not history and quote[symbol].get("current", 0) > 0:
-                history = _generate_synthetic_stock_history(stock_code, float(quote[symbol]["current"]))
     except Exception:
         pass
 
-    if not history:
-        history = _generate_synthetic_stock_history(stock_code, 20.0)
-
     result = {
+        "source": "tencent_qfq",
         "code": stock_code,
         "name": stock_name,
         "start_date": history[0]["date"] if history else "",
@@ -380,4 +381,3 @@ async def fetch_stock_today_timeline(stock_code: str) -> Dict[str, Any]:
         "count": len(points),
         "points": points
     }
-

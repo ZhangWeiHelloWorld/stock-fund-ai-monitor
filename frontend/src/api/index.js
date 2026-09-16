@@ -109,6 +109,47 @@ export default {
   deleteCalendarAiAdvice: (id) => api.delete(`/calendar/ai-advice/${id}`).then(res => res.data),
   verifyCalendarAiAdvice: (date, data) => api.put(`/calendar/ai-advice/${date}/verify`, data).then(res => res.data),
   calculateCalendarBazi: (data) => api.post('/calendar/calculate-bazi', data).then(res => res.data),
-  getCalendarCities: () => api.get('/calendar/cities').then(res => res.data)
+  getCalendarCities: () => api.get('/calendar/cities').then(res => res.data),
+
+  // 🚨 Risk & OM-STW 舆情风控
+  getRiskModels: () => api.get('/risk/models').then(res => res.data),
+  createRiskModel: (data) => api.post('/risk/models', data).then(res => res.data),
+  updateRiskModel: (id, data) => api.put(`/risk/models/${id}`, data).then(res => res.data),
+  deleteRiskModel: (id) => api.delete(`/risk/models/${id}`).then(res => res.data),
+  getRiskMarketContext: () => api.get('/risk/market-context').then(res => res.data),
+  getRiskOfficialNews: (limit = 15) => api.get(`/risk/official-news?limit=${limit}`).then(res => res.data),
+  analyzeManualNews: (data) => api.post('/risk/analyze/manual', data).then(res => res.data),
+  analyzeCrawlNews: (data) => api.post('/risk/analyze/crawl', data).then(res => res.data),
+  getRiskRecords: (page = 1, pageSize = 20, level = '', modelId = '') => {
+    let url = `/risk/records?page=${page}&page_size=${pageSize}`
+    if (level) url += `&level=${level}`
+    if (modelId) url += `&model_id=${modelId}`
+    return api.get(url).then(res => res.data)
+  },
+  getLatestRiskRecord: () => api.get('/risk/records/latest').then(res => res.data),
+  getRiskRecordDetail: (id) => api.get(`/risk/records/${id}`).then(res => res.data),
+  deleteRiskRecord: (id) => api.delete(`/risk/records/${id}`).then(res => res.data),
+  pushRiskRecordToWx: (id) => api.post(`/risk/records/${id}/push-wx`).then(res => res.data),
+
+  // 📅 每日开盘前预警快照与收盘指数点位对照
+  getDailyRiskRecords: (limit = 100, startDate = '', endDate = '') => {
+    let url = `/risk/daily-records?limit=${limit}`
+    if (startDate) url += `&start_date=${startDate}`
+    if (endDate) url += `&end_date=${endDate}`
+    return api.get(url).then(res => res.data)
+  },
+  getDailyRiskAnalytics: (startDate = '', endDate = '') => {
+    let url = '/risk/daily-records/analytics'
+    const params = []
+    if (startDate) params.push(`start_date=${startDate}`)
+    if (endDate) params.push(`end_date=${endDate}`)
+    if (params.length) url += `?${params.join('&')}`
+    return api.get(url).then(res => res.data)
+  },
+  snapshotPreMarketRisk: (data = {}) => api.post('/risk/daily-records/snapshot-premarket', data).then(res => res.data),
+  syncCloseIndices: (data = {}) => api.post('/risk/daily-records/sync-close', data).then(res => res.data),
+  updateDailyRiskRecord: (id, data) => api.put(`/risk/daily-records/${id}`, data).then(res => res.data)
 }
+
+
 

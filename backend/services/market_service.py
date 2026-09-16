@@ -49,6 +49,8 @@ async def fetch_stock_data(codes: list) -> dict:
                         current = float(fields[3]) if fields[3] else 0.0
                         high = float(fields[4]) if fields[4] else 0.0
                         low = float(fields[5]) if fields[5] else 0.0
+                        volume = float(fields[8]) if len(fields) > 8 and fields[8] else 0.0
+                        amount = float(fields[9]) if len(fields) > 9 and fields[9] else 0.0
 
                         # 针对早盘 9:15-9:25 集合竞价或尚未成交（current == 0）时的现价回退与涨跌幅修正
                         real_current = current
@@ -78,7 +80,12 @@ async def fetch_stock_data(codes: list) -> dict:
                             "high": high,
                             "low": low,
                             "change_pct": change_pct,
-                            "change_amount": change_amount
+                            "change_amount": change_amount,
+                            "volume": volume,
+                            "volume_hands": volume / 100.0,
+                            "volume_formatted": _format_volume(volume / 100.0),
+                            "amount": amount,
+                            "amount_formatted": _format_turnover(amount)
                         }
             return result
     except Exception as e:
@@ -105,6 +112,29 @@ def _format_turnover(amount: float) -> str:
     elif amount >= 10_000:
         return f"{amount / 10_000:.2f}万"
     return f"{amount:.2f}"
+
+
+def _format_volume(volume_hands: float) -> str:
+    """Format volume (in 手 / lots) into human-friendly string (e.g. 3.10亿手 or 8462.81万手)."""
+    if not volume_hands or volume_hands <= 0:
+        return "-"
+    if volume_hands >= 100_000_000:
+        return f"{volume_hands / 100_000_000:.2f}亿手"
+    elif volume_hands >= 10_000:
+        return f"{volume_hands / 10_000:.2f}万手"
+    return f"{volume_hands:.0f}手"
+
+
+def _format_shares(volume_hands: float) -> str:
+    """Format volume in shares (股) into human-friendly string (e.g. 310.00亿股)."""
+    if not volume_hands or volume_hands <= 0:
+        return "-"
+    shares = volume_hands * 100.0
+    if shares >= 100_000_000:
+        return f"{shares / 100_000_000:.2f}亿股"
+    elif shares >= 10_000:
+        return f"{shares / 10_000:.2f}万股"
+    return f"{shares:.0f}股"
 
 
 async def fetch_market_indices(index_list: list = None) -> list:
@@ -149,10 +179,19 @@ async def fetch_market_indices(index_list: list = None) -> list:
                 current = float(fields[3]) if fields[3] else 0.0
                 high = float(fields[4]) if fields[4] else 0.0
                 low = float(fields[5]) if fields[5] else 0.0
-                volume = float(fields[8]) if len(fields) > 8 and fields[8] else 0.0
+                raw_volume = float(fields[8]) if len(fields) > 8 and fields[8] else 0.0
                 amount = float(fields[9]) if len(fields) > 9 and fields[9] else 0.0
                 update_date = fields[30] if len(fields) > 30 else ""
                 update_time = fields[31] if len(fields) > 31 else ""
+
+                # Standardize volume to 手 (lots).
+                # Sina API convention:
+                # - 'sh' indices: fields[8] is already in 手 (lots)
+                # - 'sz' and 'bj' indices: fields[8] is in 股 (shares), divide by 100 to get 手
+                if code.startswith("sh"):
+                    volume_hands = raw_volume
+                else:
+                    volume_hands = raw_volume / 100.0
 
                 real_current = current
                 if real_current <= 0:
@@ -187,7 +226,10 @@ async def fetch_market_indices(index_list: list = None) -> list:
                     "change_amount": change_amount,
                     "change_pct": change_pct,
                     "amplitude": amplitude,
-                    "volume": volume,
+                    "volume": volume_hands,
+                    "volume_shares": volume_hands * 100.0,
+                    "volume_formatted": _format_volume(volume_hands),
+                    "volume_shares_formatted": _format_shares(volume_hands),
                     "amount": amount,
                     "amount_formatted": _format_turnover(amount),
                     "update_time": update_time,
@@ -210,6 +252,9 @@ async def fetch_market_indices(index_list: list = None) -> list:
             "change_pct": 0.0,
             "amplitude": 0.0,
             "volume": 0.0,
+            "volume_shares": 0.0,
+            "volume_formatted": "-",
+            "volume_shares_formatted": "-",
             "amount": 0.0,
             "amount_formatted": "-",
             "update_time": "",
@@ -458,6 +503,11 @@ async def get_market_overview(user_id: int = 1) -> dict:
             s['day_profit'] = day_profit_val
             s['total_profit'] = total_profit_val
             s['total_profit_pct'] = total_profit_pct
+            s['volume'] = s_data.get('volume', 0.0)
+            s['volume_hands'] = s_data.get('volume_hands', 0.0)
+            s['volume_formatted'] = s_data.get('volume_formatted', '-')
+            s['amount'] = s_data.get('amount', 0.0)
+            s['amount_formatted'] = s_data.get('amount_formatted', '-')
             if not s.get('name') and s_data.get('name'):
                 s['name'] = s_data['name']
 
@@ -475,6 +525,11 @@ async def get_market_overview(user_id: int = 1) -> dict:
             s['day_profit'] = 0.0
             s['total_profit'] = 0.0
             s['total_profit_pct'] = 0.0
+            s['volume'] = 0.0
+            s['volume_hands'] = 0.0
+            s['volume_formatted'] = '-'
+            s['amount'] = 0.0
+            s['amount_formatted'] = '-'
         enriched_stocks.append(s)
 
     # Enrich funds
@@ -534,6 +589,13 @@ async def get_market_overview(user_id: int = 1) -> dict:
     total_cost = stock_cost + fund_cost
     total_profit_pct = (total_profit / total_cost * 100) if total_cost > 0 else 0.0
 
+    # Calculate A-share whole-market total volume and turnover across core markets (上证 sh000001 + 深证 sz399001 + 北证 bj899050)
+    sh_idx = next((i for i in indices_data if i['code'] == 'sh000001'), None)
+    sz_idx = next((i for i in indices_data if i['code'] == 'sz399001'), None)
+    bj_idx = next((i for i in indices_data if i['code'] == 'bj899050'), None)
+
+    market_total_volume = (sh_idx['volume'] if sh_idx else 0.0) + (sz_idx['volume'] if sz_idx else 0.0) + (bj_idx['volume'] if bj_idx else 0.0)
+    market_total_turnover = (sh_idx['amount'] if sh_idx else 0.0) + (sz_idx['amount'] if sz_idx else 0.0) + (bj_idx['amount'] if bj_idx else 0.0)
 
     # Save today snapshot
     today_str = datetime.now().strftime("%Y-%m-%d")
@@ -574,6 +636,11 @@ async def get_market_overview(user_id: int = 1) -> dict:
             "fund_profit_pct": fund_profit_pct,
             "fund_day_profit": fund_day_profit,
             "market_status": _get_market_status(),
+            "market_volume": market_total_volume,
+            "market_volume_formatted": _format_volume(market_total_volume),
+            "market_volume_shares_formatted": _format_shares(market_total_volume),
+            "market_turnover": market_total_turnover,
+            "market_turnover_formatted": _format_turnover(market_total_turnover),
             "last_update": datetime.now().strftime("%H:%M:%S")
         }
     }

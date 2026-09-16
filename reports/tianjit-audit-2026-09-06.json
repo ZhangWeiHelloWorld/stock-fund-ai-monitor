@@ -1,0 +1,501 @@
+{
+  "source": "User screenshot dated 2026-09-04 and unverified local historical caches",
+  "holdings": [
+    {
+      "code": "600460",
+      "name": "士兰微",
+      "value": 75850.0,
+      "cost": 64675.0,
+      "unrealized": 11175.0,
+      "weight_pct": 9.64
+    },
+    {
+      "code": "002466",
+      "name": "天齐锂业",
+      "value": 40815.0,
+      "cost": 31140.0,
+      "unrealized": 9675.0,
+      "weight_pct": 5.19
+    },
+    {
+      "code": "600703",
+      "name": "三安光电",
+      "value": 150822.0,
+      "cost": 175104.0,
+      "unrealized": -24282.0,
+      "weight_pct": 19.16
+    },
+    {
+      "code": "519674",
+      "name": "银河创新混合A",
+      "value": 61340.17,
+      "cost": 34529.29,
+      "unrealized": 26810.88,
+      "weight_pct": 7.79
+    },
+    {
+      "code": "007872",
+      "name": "金信稳健策略混合A",
+      "value": 112174.2,
+      "cost": 59412.5,
+      "unrealized": 52761.69,
+      "weight_pct": 14.25
+    },
+    {
+      "code": "017811",
+      "name": "东方人工智能主题混合C",
+      "value": 346031.77,
+      "cost": 119011.93,
+      "unrealized": 227019.83,
+      "weight_pct": 43.97
+    }
+  ],
+  "backtests": [
+    {
+      "code": "600460",
+      "start": "2025-01-02",
+      "end": "2026-09-04",
+      "metrics": {
+        "strategy_return_pct": -19.2,
+        "benchmark_return_pct": 25.55,
+        "excess_return_pct": -44.75,
+        "annualized_return_pct": -12.0,
+        "max_drawdown_pct": 23.9,
+        "sharpe_ratio": -0.59,
+        "initial_capital": 50000.0,
+        "total_invested": 50000.0,
+        "final_assets": 40397.74,
+        "final_cash": 15709.74,
+        "final_holding_value": 24688.0,
+        "final_holding_shares": 800.0,
+        "total_trades": 142,
+        "buy_trades": 91,
+        "sell_trades": 51,
+        "winning_sells": 36,
+        "win_rate": 70.6,
+        "total_fees_paid": 999.26,
+        "subscription_fees": 467.66,
+        "redemption_fees": 531.6,
+        "strategy_name": "天机时空策略"
+      }
+    },
+    {
+      "code": "600460",
+      "start": "2026-01-05",
+      "end": "2026-09-04",
+      "metrics": {
+        "strategy_return_pct": -10.57,
+        "benchmark_return_pct": 7.75,
+        "excess_return_pct": -18.32,
+        "annualized_return_pct": -15.32,
+        "max_drawdown_pct": 19.85,
+        "sharpe_ratio": -0.87,
+        "initial_capital": 50000.0,
+        "total_invested": 50000.0,
+        "final_assets": 44714.08,
+        "final_cash": 20026.08,
+        "final_holding_value": 24688.0,
+        "final_holding_shares": 800.0,
+        "total_trades": 61,
+        "buy_trades": 40,
+        "sell_trades": 21,
+        "winning_sells": 15,
+        "win_rate": 71.4,
+        "total_fees_paid": 436.92,
+        "subscription_fees": 209.7,
+        "redemption_fees": 227.22,
+        "strategy_name": "天机时空策略"
+      }
+    },
+    {
+      "code": "002466",
+      "start": "2025-01-02",
+      "end": "2026-09-04",
+      "metrics": {
+        "strategy_return_pct": 15.63,
+        "benchmark_return_pct": 42.33,
+        "excess_return_pct": -26.7,
+        "annualized_return_pct": 9.1,
+        "max_drawdown_pct": 17.87,
+        "sharpe_ratio": 0.43,
+        "initial_capital": 50000.0,
+        "total_invested": 50000.0,
+        "final_assets": 57815.49,
+        "final_cash": 30155.49,
+        "final_holding_value": 27660.0,
+        "final_holding_shares": 600.0,
+        "total_trades": 125,
+        "buy_trades": 69,
+        "sell_trades": 56,
+        "winning_sells": 48,
+        "win_rate": 85.7,
+        "total_fees_paid": 876.51,
+        "subscription_fees": 356.91,
+        "redemption_fees": 519.6,
+        "strategy_name": "天机时空策略"
+      }
+    },
+    {
+      "code": "002466",
+      "start": "2026-01-05",
+      "end": "2026-09-04",
+      "metrics": {
+        "strategy_return_pct": 3.49,
+        "benchmark_return_pct": -19.12,
+        "excess_return_pct": 22.61,
+        "annualized_return_pct": 5.23,
+        "max_drawdown_pct": 14.45,
+        "sharpe_ratio": 0.27,
+        "initial_capital": 50000.0,
+        "total_invested": 50000.0,
+        "final_assets": 51744.29,
+        "final_cash": 24084.29,
+        "final_holding_value": 27660.0,
+        "final_holding_shares": 600.0,
+        "total_trades": 49,
+        "buy_trades": 28,
+        "sell_trades": 21,
+        "winning_sells": 17,
+        "win_rate": 81.0,
+        "total_fees_paid": 351.71,
+        "subscription_fees": 148.57,
+        "redemption_fees": 203.14,
+        "strategy_name": "天机时空策略"
+      }
+    },
+    {
+      "code": "600703",
+      "start": "2025-01-02",
+      "end": "2026-09-04",
+      "metrics": {
+        "strategy_return_pct": 9.28,
+        "benchmark_return_pct": 14.35,
+        "excess_return_pct": -5.07,
+        "annualized_return_pct": 5.47,
+        "max_drawdown_pct": 18.67,
+        "sharpe_ratio": 0.26,
+        "initial_capital": 50000.0,
+        "total_invested": 50000.0,
+        "final_assets": 54641.76,
+        "final_cash": 39923.76,
+        "final_holding_value": 14718.0,
+        "final_holding_shares": 1100.0,
+        "total_trades": 174,
+        "buy_trades": 112,
+        "sell_trades": 62,
+        "winning_sells": 41,
+        "win_rate": 66.1,
+        "total_fees_paid": 1232.54,
+        "subscription_fees": 573.9,
+        "redemption_fees": 658.64,
+        "strategy_name": "天机时空策略"
+      }
+    },
+    {
+      "code": "600703",
+      "start": "2026-01-05",
+      "end": "2026-09-04",
+      "metrics": {
+        "strategy_return_pct": 6.9,
+        "benchmark_return_pct": -6.95,
+        "excess_return_pct": 13.85,
+        "annualized_return_pct": 10.44,
+        "max_drawdown_pct": 18.13,
+        "sharpe_ratio": 0.41,
+        "initial_capital": 50000.0,
+        "total_invested": 50000.0,
+        "final_assets": 53450.01,
+        "final_cash": 38732.01,
+        "final_holding_value": 14718.0,
+        "final_holding_shares": 1100.0,
+        "total_trades": 84,
+        "buy_trades": 55,
+        "sell_trades": 29,
+        "winning_sells": 19,
+        "win_rate": 65.5,
+        "total_fees_paid": 603.99,
+        "subscription_fees": 285.62,
+        "redemption_fees": 318.37,
+        "strategy_name": "天机时空策略"
+      }
+    },
+    {
+      "code": "519674",
+      "start": "2025-01-02",
+      "end": "2026-09-03",
+      "metrics": {
+        "strategy_return_pct": 7.65,
+        "benchmark_return_pct": 100.94,
+        "excess_return_pct": -93.29,
+        "annualized_return_pct": 4.53,
+        "max_drawdown_pct": 14.99,
+        "sharpe_ratio": 0.23,
+        "initial_capital": 50000.0,
+        "total_invested": 50000.0,
+        "final_assets": 53822.72,
+        "final_cash": 35336.28,
+        "final_holding_value": 18486.45,
+        "final_holding_shares": 1541.5394,
+        "total_trades": 174,
+        "buy_trades": 114,
+        "sell_trades": 60,
+        "winning_sells": 42,
+        "win_rate": 70.0,
+        "total_fees_paid": 2828.24,
+        "subscription_fees": 478.97,
+        "redemption_fees": 2349.27,
+        "strategy_name": "天机时空策略"
+      }
+    },
+    {
+      "code": "519674",
+      "start": "2026-01-05",
+      "end": "2026-09-03",
+      "metrics": {
+        "strategy_return_pct": -2.77,
+        "benchmark_return_pct": 32.06,
+        "excess_return_pct": -34.83,
+        "annualized_return_pct": -4.11,
+        "max_drawdown_pct": 14.39,
+        "sharpe_ratio": -0.3,
+        "initial_capital": 50000.0,
+        "total_invested": 50000.0,
+        "final_assets": 48617.14,
+        "final_cash": 30130.69,
+        "final_holding_value": 18486.45,
+        "final_holding_shares": 1541.5394,
+        "total_trades": 82,
+        "buy_trades": 50,
+        "sell_trades": 32,
+        "winning_sells": 21,
+        "win_rate": 65.6,
+        "total_fees_paid": 1643.5,
+        "subscription_fees": 238.76,
+        "redemption_fees": 1404.74,
+        "strategy_name": "天机时空策略"
+      }
+    },
+    {
+      "code": "007872",
+      "start": "2025-01-02",
+      "end": "2026-09-03",
+      "metrics": {
+        "strategy_return_pct": 20.5,
+        "benchmark_return_pct": 159.62,
+        "excess_return_pct": -139.12,
+        "annualized_return_pct": 11.86,
+        "max_drawdown_pct": 12.72,
+        "sharpe_ratio": 0.67,
+        "initial_capital": 50000.0,
+        "total_invested": 50000.0,
+        "final_assets": 60251.27,
+        "final_cash": 45694.79,
+        "final_holding_value": 14556.49,
+        "final_holding_shares": 4209.9969,
+        "total_trades": 193,
+        "buy_trades": 122,
+        "sell_trades": 71,
+        "winning_sells": 47,
+        "win_rate": 66.2,
+        "total_fees_paid": 3255.17,
+        "subscription_fees": 509.53,
+        "redemption_fees": 2745.64,
+        "strategy_name": "天机时空策略"
+      }
+    },
+    {
+      "code": "007872",
+      "start": "2026-01-05",
+      "end": "2026-09-03",
+      "metrics": {
+        "strategy_return_pct": 6.75,
+        "benchmark_return_pct": 44.09,
+        "excess_return_pct": -37.34,
+        "annualized_return_pct": 10.28,
+        "max_drawdown_pct": 12.09,
+        "sharpe_ratio": 0.49,
+        "initial_capital": 50000.0,
+        "total_invested": 50000.0,
+        "final_assets": 53376.43,
+        "final_cash": 38819.94,
+        "final_holding_value": 14556.49,
+        "final_holding_shares": 4209.9969,
+        "total_trades": 82,
+        "buy_trades": 51,
+        "sell_trades": 31,
+        "winning_sells": 23,
+        "win_rate": 74.2,
+        "total_fees_paid": 1523.01,
+        "subscription_fees": 233.69,
+        "redemption_fees": 1289.32,
+        "strategy_name": "天机时空策略"
+      }
+    },
+    {
+      "code": "017811",
+      "start": "2025-01-02",
+      "end": "2026-09-03",
+      "metrics": {
+        "strategy_return_pct": 37.75,
+        "benchmark_return_pct": 223.59,
+        "excess_return_pct": -185.84,
+        "annualized_return_pct": 21.22,
+        "max_drawdown_pct": 7.61,
+        "sharpe_ratio": 1.24,
+        "initial_capital": 50000.0,
+        "total_invested": 50000.0,
+        "final_assets": 68873.97,
+        "final_cash": 56731.41,
+        "final_holding_value": 12142.56,
+        "final_holding_shares": 3808.4751,
+        "total_trades": 180,
+        "buy_trades": 113,
+        "sell_trades": 67,
+        "winning_sells": 51,
+        "win_rate": 76.1,
+        "total_fees_paid": 2414.46,
+        "subscription_fees": 0.0,
+        "redemption_fees": 2414.46,
+        "strategy_name": "天机时空策略"
+      }
+    },
+    {
+      "code": "017811",
+      "start": "2026-01-05",
+      "end": "2026-09-03",
+      "metrics": {
+        "strategy_return_pct": 12.23,
+        "benchmark_return_pct": 89.32,
+        "excess_return_pct": -77.09,
+        "annualized_return_pct": 18.85,
+        "max_drawdown_pct": 8.95,
+        "sharpe_ratio": 1.02,
+        "initial_capital": 50000.0,
+        "total_invested": 50000.0,
+        "final_assets": 56113.66,
+        "final_cash": 43971.1,
+        "final_holding_value": 12142.56,
+        "final_holding_shares": 3808.4751,
+        "total_trades": 87,
+        "buy_trades": 52,
+        "sell_trades": 35,
+        "winning_sells": 28,
+        "win_rate": 80.0,
+        "total_fees_paid": 1676.59,
+        "subscription_fees": 0.0,
+        "redemption_fees": 1676.59,
+        "strategy_name": "天机时空策略"
+      }
+    }
+  ],
+  "scenarios": [
+    {
+      "month": "2026-09",
+      "down_5pct": {
+        "month_pnl": -39351.66,
+        "cumulative_pnl": -39351.66
+      },
+      "flat": {
+        "month_pnl": 0.0,
+        "cumulative_pnl": 0.0
+      },
+      "up_5pct": {
+        "month_pnl": 39351.66,
+        "cumulative_pnl": 39351.66
+      }
+    },
+    {
+      "month": "2026-10",
+      "down_5pct": {
+        "month_pnl": -37384.07,
+        "cumulative_pnl": -76735.73
+      },
+      "flat": {
+        "month_pnl": 0.0,
+        "cumulative_pnl": 0.0
+      },
+      "up_5pct": {
+        "month_pnl": 41319.24,
+        "cumulative_pnl": 80670.9
+      }
+    },
+    {
+      "month": "2026-11",
+      "down_5pct": {
+        "month_pnl": -35514.87,
+        "cumulative_pnl": -112250.6
+      },
+      "flat": {
+        "month_pnl": 0.0,
+        "cumulative_pnl": 0.0
+      },
+      "up_5pct": {
+        "month_pnl": 43385.2,
+        "cumulative_pnl": 124056.1
+      }
+    },
+    {
+      "month": "2026-12",
+      "down_5pct": {
+        "month_pnl": -33739.13,
+        "cumulative_pnl": -145989.73
+      },
+      "flat": {
+        "month_pnl": 0.0,
+        "cumulative_pnl": 0.0
+      },
+      "up_5pct": {
+        "month_pnl": 45554.46,
+        "cumulative_pnl": 169610.56
+      }
+    },
+    {
+      "month": "2027-01",
+      "down_5pct": {
+        "month_pnl": -32052.17,
+        "cumulative_pnl": -178041.9
+      },
+      "flat": {
+        "month_pnl": 0.0,
+        "cumulative_pnl": 0.0
+      },
+      "up_5pct": {
+        "month_pnl": 47832.19,
+        "cumulative_pnl": 217442.75
+      }
+    },
+    {
+      "month": "2027-02",
+      "down_5pct": {
+        "month_pnl": -30449.56,
+        "cumulative_pnl": -208491.46
+      },
+      "flat": {
+        "month_pnl": 0.0,
+        "cumulative_pnl": 0.0
+      },
+      "up_5pct": {
+        "month_pnl": 50223.79,
+        "cumulative_pnl": 267666.54
+      }
+    },
+    {
+      "month": "2027-03",
+      "down_5pct": {
+        "month_pnl": -28927.08,
+        "cumulative_pnl": -237418.55
+      },
+      "flat": {
+        "month_pnl": 0.0,
+        "cumulative_pnl": 0.0
+      },
+      "up_5pct": {
+        "month_pnl": 52734.98,
+        "cumulative_pnl": 320401.52
+      }
+    }
+  ],
+  "total_value": 787033.14,
+  "total_cost": 483872.72,
+  "screenshot_total_difference": -0.01
+}

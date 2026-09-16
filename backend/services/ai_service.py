@@ -64,13 +64,17 @@ def format_holdings_summary(overview: dict, session_name: str = "持仓概览") 
     summary = overview.get('summary', {})
     total_day_profit = summary.get('total_day_profit', 0.0)
     total_profit = summary.get('total_profit', 0.0)
+    market_vol = summary.get('market_volume_formatted', '-')
+    market_turnover = summary.get('market_turnover_formatted', '-')
 
     lines = [
         f"【持仓概览与市场行情 - {date_str} {time_str} {session_name}】",
         f"💰 今日总盈亏: {total_day_profit:+.2f} 元",
         f"💰 累计总盈亏: {total_profit:+.2f} 元",
-        ""
     ]
+    if market_vol != '-' or market_turnover != '-':
+        lines.append(f"📊 A股全市场总成交量: {market_vol}, 总成交额: {market_turnover}")
+    lines.append("")
 
     indices = overview.get('indices', [])
     if indices:
@@ -81,8 +85,9 @@ def format_holdings_summary(overview: dict, session_name: str = "持仓概览") 
             idx_change_pct = idx.get('change_pct', 0.0)
             idx_change_amount = idx.get('change_amount', 0.0)
             idx_turnover = idx.get('amount_formatted', '-')
+            idx_volume = idx.get('volume_formatted', '-')
             lines.append(
-                f"- {idx_name}: {idx_current:.2f} ({idx_change_pct:+.2f}%, {idx_change_amount:+.2f}点), 成交额: {idx_turnover}"
+                f"- {idx_name}: {idx_current:.2f} ({idx_change_pct:+.2f}%, {idx_change_amount:+.2f}点), 成交量: {idx_volume}, 成交额: {idx_turnover}"
             )
         lines.append("")
 

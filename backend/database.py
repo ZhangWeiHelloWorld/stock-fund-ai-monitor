@@ -65,6 +65,112 @@ def get_db():
     finally:
         conn.close()
 
+def seed_extended_daily_risk_records(cursor, user_id: int = 1):
+    import datetime as dt_mod
+    import random
+    random.seed(42)
+
+    start_date = dt_mod.date(2026, 6, 1)
+    end_date = dt_mod.date(2026, 9, 9)
+
+    cur_sh = 3010.0
+    cur_sz = 9200.0
+    cur_cy = 1780.0
+    cur_kc = 740.0
+    cur_hs = 3520.0
+    cur_bj = 860.0
+
+    records = []
+    cur = start_date
+
+    hype_dates = {'2026-06-18', '2026-07-08', '2026-07-28', '2026-08-14', '2026-08-27'}
+    yellow_dates = {'2026-06-11', '2026-06-25', '2026-07-16', '2026-08-05', '2026-08-21', '2026-09-04'}
+
+    while cur <= end_date:
+        if cur.weekday() < 5:
+            d_str = cur.strftime('%Y-%m-%d')
+            if d_str in hype_dates:
+                score = random.randint(72, 85)
+                level = 'red' if score >= 75 else 'orange'
+                level_name = '🔴 红色预警【绝壁顶】' if score >= 75 else '🟠 橙色预警【诱多阶段顶】'
+                lead_time = 'T+0 ～ T+2 个交易日'
+                news_title = f'主流官媒重磅社论：外资连续净流入 居民资产入市新热潮 ({d_str})'
+                news_source = '央视《新闻联播》/经济日报'
+                summary = '官媒密集唱多出圈，情绪指标与BIAS20超买高位钝化，主力巨量出逃派发风险极大。'
+                guide = ['锁死买入按键，禁止追涨', '次日逢高果断减持7成仓位', '防范主力借利好对倒派发']
+                sh_chg = round(random.uniform(-2.4, -0.9), 2)
+                val_status = '🎯 风险预警命中 (大盘收跌)'
+            elif d_str in yellow_dates:
+                score = random.randint(45, 58)
+                level = 'yellow'
+                level_name = '🟡 黄色注意【分歧加剧】'
+                lead_time = 'T+3 ～ T+5 个交易日'
+                news_title = f'宏观经济数据解读：结构分化延续 政策工具箱持续发力 ({d_str})'
+                news_source = '人民日报/新华社'
+                summary = '板块轮动速度加快，多空博弈白热化，量能未能持续放大，谨防冲高回落。'
+                guide = ['关注成交量能变化', '适度降低波段仓位', '逢反弹锁定盈利']
+                sh_chg = round(random.uniform(-0.9, 0.4), 2)
+                val_status = '🎯 风险预警命中 (大盘收跌)' if sh_chg < 0 else '⏳ 变盘观察期 (多空博弈中)'
+            else:
+                score = random.randint(22, 38)
+                level = 'green'
+                level_name = '🟢 绿色安全【常态安全】'
+                lead_time = '暂无变盘风险'
+                news_title = f'央行与发改委统筹推进重点项目 宏观政策平稳发力 ({d_str})'
+                news_source = '官方媒体'
+                summary = '舆情中性平稳，无大众出圈狂热现象，技术指标处于常态震荡区间。'
+                guide = ['保持常态底仓', '跟踪优质个股均线趋势']
+                sh_chg = round(random.uniform(-0.6, 1.3), 2)
+                if sh_chg <= -1.5:
+                    val_status = '⚡ 外部突发超跌'
+                elif sh_chg < 0:
+                    val_status = '🟡 弱势微调 (风险未超标)'
+                else:
+                    val_status = '🟢 常态平稳 (符合预期)'
+
+            sz_chg = round(sh_chg * random.uniform(1.05, 1.25), 2)
+            cy_chg = round(sh_chg * random.uniform(1.15, 1.45), 2)
+            kc_chg = round(sh_chg * random.uniform(1.0, 1.35), 2)
+            hs_chg = round(sh_chg * random.uniform(0.9, 1.05), 2)
+            bj_chg = round(sh_chg * random.uniform(0.8, 1.4), 2)
+
+            cur_sh = round(cur_sh * (1 + sh_chg / 100.0), 2)
+            cur_sz = round(cur_sz * (1 + sz_chg / 100.0), 2)
+            cur_cy = round(cur_cy * (1 + cy_chg / 100.0), 2)
+            cur_kc = round(cur_kc * (1 + kc_chg / 100.0), 2)
+            cur_hs = round(cur_hs * (1 + hs_chg / 100.0), 2)
+            cur_bj = round(cur_bj * (1 + bj_chg / 100.0), 2)
+            turnover = round(random.uniform(1200.0, 2400.0), 1)
+
+            idx_data = {
+                'sh000001': {'name': '上证指数', 'current': cur_sh, 'change_pct': sh_chg},
+                'sz399001': {'name': '深证成指', 'current': cur_sz, 'change_pct': sz_chg},
+                'sz399006': {'name': '创业板指', 'current': cur_cy, 'change_pct': cy_chg},
+                'sh000688': {'name': '科创50', 'current': cur_kc, 'change_pct': kc_chg},
+                'sh000300': {'name': '沪深300', 'current': cur_hs, 'change_pct': hs_chg},
+                'bj899050': {'name': '北证50', 'current': cur_bj, 'change_pct': bj_chg},
+                'turnover_billion': turnover
+            }
+
+            records.append((
+                user_id, d_str, score, level, level_name, lead_time, news_title, news_source,
+                summary, json.dumps(guide, ensure_ascii=False), None,
+                f'{d_str}T09:15:00', cur_sh, sh_chg, cur_sz, sz_chg, cur_cy, cy_chg,
+                cur_kc, kc_chg, json.dumps(idx_data, ensure_ascii=False), val_status,
+                f'{d_str}T15:05:00', f'{d_str}T09:15:00', f'{d_str}T15:05:00'
+            ))
+        cur += dt_mod.timedelta(days=1)
+
+    cursor.executemany('''
+        INSERT OR IGNORE INTO daily_risk_market_records (
+            user_id, trade_date, pre_market_score, pre_market_level, pre_market_level_name,
+            lead_time, news_title, news_source, summary, action_guide, risk_record_id,
+            pre_market_time, sh_close, sh_change_pct, sz_close, sz_change_pct, cy_close,
+            cy_change_pct, kc_close, kc_change_pct, indices_data, validation_status,
+            close_time, created_at, updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    ''', records)
+
 def init_db():
     os.makedirs(os.path.dirname(os.path.abspath(DB_PATH)), exist_ok=True)
     conn = sqlite3.connect(DB_PATH)
@@ -194,6 +300,194 @@ def init_db():
         )
     ''')
     cursor.execute("CREATE INDEX IF NOT EXISTS idx_calendar_ai_advice_user_date ON calendar_ai_advice (user_id, date)")
+
+    # 7. Risk Models and Risk Analysis Records tables
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS risk_models (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            model_id TEXT UNIQUE NOT NULL,
+            name TEXT NOT NULL,
+            version TEXT DEFAULT 'v1.0',
+            description TEXT,
+            category TEXT DEFAULT 'top_warning',
+            system_prompt TEXT,
+            prompt_template TEXT NOT NULL,
+            alert_threshold INTEGER DEFAULT 60,
+            is_enabled BOOLEAN DEFAULT 1,
+            is_default BOOLEAN DEFAULT 0,
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL
+        )
+    ''')
+
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS risk_analysis_records (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER NOT NULL,
+            trigger_type TEXT NOT NULL,
+            model_id TEXT NOT NULL,
+            model_name TEXT NOT NULL,
+            news_title TEXT NOT NULL,
+            news_source TEXT,
+            news_content TEXT,
+            score INTEGER NOT NULL,
+            level TEXT NOT NULL,
+            level_name TEXT NOT NULL,
+            lead_time TEXT,
+            action_guide TEXT,
+            breakdown TEXT,
+            analysis_report TEXT NOT NULL,
+            pushed_to_wx BOOLEAN DEFAULT 0,
+            created_at TEXT NOT NULL
+        )
+    ''')
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_risk_records_user ON risk_analysis_records (user_id, created_at)")
+
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS daily_risk_market_records (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER NOT NULL,
+            trade_date TEXT NOT NULL,
+            pre_market_score INTEGER,
+            pre_market_level TEXT,
+            pre_market_level_name TEXT,
+            lead_time TEXT,
+            news_title TEXT,
+            news_source TEXT,
+            summary TEXT,
+            action_guide TEXT,
+            risk_record_id INTEGER,
+            pre_market_time TEXT,
+            sh_close REAL,
+            sh_change_pct REAL,
+            sz_close REAL,
+            sz_change_pct REAL,
+            cy_close REAL,
+            cy_change_pct REAL,
+            kc_close REAL,
+            kc_change_pct REAL,
+            indices_data TEXT,
+            validation_status TEXT,
+            close_time TEXT,
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL,
+            UNIQUE(user_id, trade_date)
+        )
+    ''')
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_daily_risk_date ON daily_risk_market_records (user_id, trade_date)")
+
+    # Seed initial daily risk market records for user 1 if table is empty
+    cursor.execute("SELECT COUNT(*) FROM daily_risk_market_records")
+    if cursor.fetchone()[0] == 0:
+        seed_records = [
+            (1, "2026-09-16", 42, "yellow", "🟡 黄色注意【分歧加剧】", "T+3~T+5", "徐湖平等相关责任人被依规依纪依法处理", "中央纪委国家监委", "严肃监管信号释放，大盘处于常态整理区间，建议控制仓位分歧应对。", '["严格执行止损纪律", "关注盘口承接力", "仓位控制在5成以内"]', 6, "2026-09-16T09:15:00", None, None, None, None, None, None, None, None, None, "⏳ 今日交易中 / 等待收盘归因", None, "2026-09-16T09:15:00", "2026-09-16T09:15:00"),
+            (1, "2026-09-15", 35, "green", "🟢 绿色安全【常态安全】", "暂无变盘风险", "央行开展中期借贷并发操作保持流动性充裕", "中国人民银行", "宏观流动性合理宽裕，未见主流官媒出圈唱多信号，市场常态平稳。", '["保持常态化仓位", "关注核心资产均线支撑"]', None, "2026-09-15T09:15:00", 2717.28, -0.48, 7992.25, -0.88, 1533.47, -1.07, 651.98, -0.92, None, "🟢 常态平稳 (符合预期)", "2026-09-15T15:05:00", "2026-09-15T09:15:00", "2026-09-15T15:05:00"),
+            (1, "2026-09-14", 38, "green", "🟢 绿色安全【常态安全】", "暂无变盘风险", "8月份宏观经济数据平稳运行 高技术制造业投资增势良好", "国家统计局", "宏观数据平稳披露，官媒常规通报无亢奋出圈迹象，风险偏好中性。", '["遵循个股技术位", "不盲目追高杀跌"]', None, "2026-09-14T09:15:00", 2704.09, -0.48, 7983.55, -0.88, 1535.17, -1.07, 652.88, -0.92, None, "🟢 常态平稳 (符合预期)", "2026-09-14T15:05:00", "2026-09-14T09:15:00", "2026-09-14T15:05:00"),
+            (1, "2026-09-11", 60, "orange", "🟠 橙色预警【诱多阶段顶】", "T+0~T+2", "自动化测试：外资爆买A股狂欢，居民存款涌向权益市场", "证券时报", "官媒密集唱多且情绪传播触达末端大众，BIAS20处于高位，主力存在出货诱多可能。", '["禁止开新仓追高", "执行T+1减仓计划", "跌破MA5坚决离场"]', 5, "2026-09-11T09:15:00", 2717.12, -0.17, 8054.24, -0.63, 1551.40, -0.42, 658.12, -0.85, None, "🎯 风险预警命中 (大盘收跌)", "2026-09-11T15:05:00", "2026-09-11T09:15:00", "2026-09-11T15:05:00"),
+            (1, "2026-09-10", 45, "yellow", "🟡 黄色注意【分歧加剧】", "T+3~T+5", "测试新闻：经济日报发文活跃资本市场 提高居民财产性收入", "《经济日报》", "政策底信号积极，但高位承接资金尚存分歧，需提防冲高回落。", '["密切跟踪成交量能", "逢高锁定短线利润"]', 2, "2026-09-10T09:15:00", 2721.80, 0.28, 8105.38, 0.22, 1558.93, 0.48, 663.75, 0.35, None, "⏳ 变盘观察期 (多空博弈中)", "2026-09-10T15:05:00", "2026-09-10T09:15:00", "2026-09-10T15:05:00")
+        ]
+        cursor.executemany('''
+            INSERT INTO daily_risk_market_records (
+                user_id, trade_date, pre_market_score, pre_market_level, pre_market_level_name,
+                lead_time, news_title, news_source, summary, action_guide, risk_record_id,
+                pre_market_time, sh_close, sh_change_pct, sz_close, sz_change_pct, cy_close,
+                cy_change_pct, kc_close, kc_change_pct, indices_data, validation_status,
+                close_time, created_at, updated_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ''', seed_records)
+
+    # Seed extended continuous trading days for user 1 (2026-06 to 2026-09) if dataset is small
+    cursor.execute("SELECT COUNT(*) FROM daily_risk_market_records")
+    if cursor.fetchone()[0] < 20:
+        seed_extended_daily_risk_records(cursor, user_id=1)
+
+    # Insert default OM-STW model if not exists
+    cursor.execute("SELECT id FROM risk_models WHERE model_id = 'om_stw'")
+    if not cursor.fetchone():
+        now_str = datetime.now().isoformat()
+        om_stw_prompt = """你是一位资深的证券市场行为金融与宏观风控专家。请基于【OM-STW 官媒舆情见顶与筹码派发预警模型】，对以下输入的新闻事件结合当前A股市场大盘动态历史走势进行深度研判，计算量化风险分值并给出实操避险建议。
+
+【模型核心原理】：
+当大盘经过一段上涨或处于中高位时，主流中央官媒（如央视《新闻联播》、《人民日报》、《经济日报》）集中重磅专题报道或普惠性唱多（如“外资爆买”、“让居民通过股票赚钱”、“牛市新起点”），标志着信息传播已触达末端大众层，边际增量买盘枯竭；同时激发的散户一致性亢奋为主力提供了天量接盘流动性，主力借利好出货，市场易在 T+0~T+2（绝壁顶）或 T+3~T+5（诱多顶）迎来深度暴跌。
+例外法则：若当前市场处于长周期极度超跌的绝对底部（如2018年2440、2024年初2635点），官媒发声属于“政策底真救市”，触发底部豁免，不作为见顶预警。
+
+【待分析的新闻信息】：
+📰 新闻标题：{news_title}
+🏛️ 报道媒体/规格：{news_source}
+⏰ 报道时间：{news_time}
+📄 新闻要点/详细内容：
+{news_content}
+
+【当前市场动态历史行情背景】：
+{market_context}
+
+【研判评估打分卡（满分100分）】：
+1. 媒体出圈度 (Media Tier Index, 权重 30%)：
+   - 央视《新闻联播》专题报道（时长>1分钟）：30分
+   - 《人民日报》/《经济日报》头版或重磅特评：25分
+   - 全网各大财经APP弹窗推送 + 抖音/微博热搜前3：20分
+   - 行业主流财经报刊常规报道：10分
+2. 技术面位置与拥挤度 (Overbought Index, 权重 30%)：
+   - 近20日累计涨幅>25% 且 BIAS20>8%：30分
+   - 短期连续大阳拔葱，RSI进入超买区(>80)：25分
+   - 中位平台突破，涨幅适中(<10%)：10分
+   - 处于历史极限底部、破位超跌区：0分（触发底部豁免）
+3. 盘口与资金异动 (Order Flow Index, 权重 25%)：
+   - 次日大幅高开后迅速回落，主力资金净流出巨量：25分
+   - 全天放天量但K线收假阴线或长上影墓碑线：20分
+   - 量价背离（创出新高但成交量明显萎缩）：15分
+   - 温和放量上攻且主力净流入：5分
+4. 叙事属性与情绪语调 (Narrative Tone, 权重 15%)：
+   - 宏大叙事/情绪性造富口号（“外资爆买”、“让居民赚钱”、“牛市新起点”等）：15分
+   - 纯产业扶持政策或客观统计数据通报：5分
+
+【预警级别标准】：
+- 🔴 红色预警 (75~100分)：【绝壁顶】变盘时间窗 T+0 ~ T+2，锁死买入按键，次日冲高坚决止盈减持7成以上
+- 🟠 橙色预警 (60~74分)：【诱多阶段顶】变盘时间窗 T+3 ~ T+5，逢冲高逐步压降总仓位至3成以下
+- 🟡 黄色注意 (40~59分)：【分歧加剧】提高警惕，收紧止盈线
+- 🟢 绿色安全 (0~39分)：【常态波动/政策底筑底】常态运行，无需恐慌
+
+【输出格式要求（极其重要）】：
+必须在回复的最开始严格输出一个 JSON 格式块（由 ```json 和 ``` 包裹），便于系统解析指标，格式如下：
+```json
+{
+  "score": 80,
+  "level": "red",
+  "level_name": "红色预警【绝壁顶】",
+  "lead_time": "T+0 ～ T+2 个交易日",
+  "action_guide": [
+    "锁死买入按键：坚决禁止追涨任何被报道的热门板块和高位股",
+    "次日逢高无条件止盈：利用早盘冲高流动性清仓或减持7成以上高位筹码",
+    "警惕主力借利好出逃：谨防大资金利用散户追高流动性大举派发"
+  ],
+  "breakdown": {
+    "media_tier": {"score": 25, "reason": "《经济日报》重磅评论"},
+    "technical_overbought": {"score": 25, "reason": "短期拔葱超买"},
+    "order_flow": {"score": 15, "reason": "放量滞涨与量价背离"},
+    "narrative_tone": {"score": 15, "reason": "出现普惠性造富宏大叙事口号"}
+  }
+}
+```
+在 JSON 块之后，请输出适合手机微信直观阅读的详细深度剖析文本（使用清晰段落与丰富 Emoji，勿用 Markdown 粗体与标题符号）。"""
+        om_stw_sys = "你是一位资深且敏锐的证券宏观博弈与行为金融风控专家，擅长根据信息传播生命周期理论与市场流动性筹码博弈，识别市场见顶与主力派发出货风险。分析透彻严谨，排版清晰适合手机直观阅读。"
+        cursor.execute('''
+            INSERT INTO risk_models (
+                model_id, name, version, description, category,
+                system_prompt, prompt_template, alert_threshold,
+                is_enabled, is_default, created_at, updated_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1, 1, ?, ?)
+        ''', (
+            'om_stw',
+            '官媒舆情见顶与筹码派发预警模型 (OM-STW)',
+            'v1.0',
+            '监控主流官媒集中重磅唱多后引发的社会级出圈、增量买盘衰竭与主力资金借机大举派发出逃风险。',
+            'top_warning',
+            om_stw_sys,
+            om_stw_prompt,
+            60,
+            now_str,
+            now_str
+        ))
 
     # Migrate existing global settings to user_settings for user_id = 1 (admin)
     cursor.execute("SELECT key, value FROM settings")
@@ -329,7 +623,12 @@ def init_db():
 4. 🔮【次日/后市关键观察信号】：给出投资者接下来的关键防守位或进攻观察点。
 
 排版要求：
-- 请使用清晰工整的段落与 Emoji（如 ☯️、📊、🌍、🎯、🔮、🛡️、💡），语言专业有力、逻辑严密、切中要害，便于随时复盘核验。'''
+- 请使用清晰工整的段落与 Emoji（如 ☯️、📊、🌍、🎯、🔮、🛡️、💡），语言专业有力、逻辑严密、切中要害，便于随时复盘核验。''',
+        'risk_cron_enabled': 'true',
+        'risk_cron_time': '20:30',
+        'risk_default_model_id': 'om_stw',
+        'risk_notify_wx': 'true',
+        'risk_alert_threshold': '60'
     }
 
     cursor.execute("SELECT id FROM users")
@@ -476,7 +775,12 @@ def init_user_default_settings(user_id: int):
 4. 🔮【次日/后市关键观察信号】：给出投资者接下来的关键防守位或进攻观察点。
 
 排版要求：
-- 请使用清晰工整的段落与 Emoji（如 ☯️、📊、🌍、🎯、🔮、🛡️、💡），语言专业有力、逻辑严密、切中要害，便于随时复盘核验。'''
+- 请使用清晰工整的段落与 Emoji（如 ☯️、📊、🌍、🎯、🔮、🛡️、💡），语言专业有力、逻辑严密、切中要害，便于随时复盘核验。''',
+        'risk_cron_enabled': 'true',
+        'risk_cron_time': '20:30',
+        'risk_default_model_id': 'om_stw',
+        'risk_notify_wx': 'true',
+        'risk_alert_threshold': '60'
     }
     conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()

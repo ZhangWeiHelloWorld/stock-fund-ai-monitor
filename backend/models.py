@@ -121,6 +121,11 @@ class SettingsUpdate(BaseModel):
     calendar_show_shensha: Optional[bool] = None
     calendar_ai_enabled: Optional[bool] = None
     calendar_ai_prompt_template: Optional[str] = None
+    risk_cron_enabled: Optional[bool] = None
+    risk_cron_time: Optional[str] = None
+    risk_default_model_id: Optional[str] = None
+    risk_notify_wx: Optional[bool] = None
+    risk_alert_threshold: Optional[int] = None
 
 class CalculateBaziRequest(BaseModel):
     birth_date: str # YYYY-MM-DD
@@ -141,3 +146,64 @@ class VerifyAdviceRequest(BaseModel):
 class GenerateAiAdviceRequest(BaseModel):
     date: Optional[str] = None # defaults to today if omitted
     time_slot: Optional[str] = None # '早盘' / '午盘' / '收盘' / '盘后' / '前瞻推演'
+
+class RiskModelCreate(BaseModel):
+    model_id: str
+    name: str
+    version: Optional[str] = "v1.0"
+    description: Optional[str] = ""
+    category: Optional[str] = "top_warning"
+    system_prompt: Optional[str] = ""
+    prompt_template: str
+    alert_threshold: Optional[int] = 60
+    is_enabled: Optional[bool] = True
+    is_default: Optional[bool] = False
+
+class RiskModelUpdate(BaseModel):
+    name: Optional[str] = None
+    version: Optional[str] = None
+    description: Optional[str] = None
+    category: Optional[str] = None
+    system_prompt: Optional[str] = None
+    prompt_template: Optional[str] = None
+    alert_threshold: Optional[int] = None
+    is_enabled: Optional[bool] = None
+    is_default: Optional[bool] = None
+
+class AnalyzeManualNewsRequest(BaseModel):
+    news_title: str
+    news_source: Optional[str] = "央视《新闻联播》"
+    news_time: Optional[str] = None
+    news_content: Optional[str] = ""
+    model_id: Optional[str] = "om_stw"
+    push_to_wx: Optional[bool] = False
+
+class AnalyzeCrawlNewsRequest(BaseModel):
+    model_id: Optional[str] = "om_stw"
+    push_to_wx: Optional[bool] = False
+    limit: Optional[int] = 10
+
+class DailyRiskSnapshotRequest(BaseModel):
+    trade_date: Optional[str] = None
+    risk_record_id: Optional[int] = None
+
+class DailyRiskSyncCloseRequest(BaseModel):
+    trade_date: Optional[str] = None
+
+class DailyRiskRecordUpdate(BaseModel):
+    pre_market_score: Optional[int] = None
+    pre_market_level: Optional[str] = None
+    pre_market_level_name: Optional[str] = None
+    lead_time: Optional[str] = None
+    news_title: Optional[str] = None
+    news_source: Optional[str] = None
+    summary: Optional[str] = None
+    sh_close: Optional[float] = None
+    sh_change_pct: Optional[float] = None
+    sz_close: Optional[float] = None
+    sz_change_pct: Optional[float] = None
+    cy_close: Optional[float] = None
+    cy_change_pct: Optional[float] = None
+    kc_close: Optional[float] = None
+    kc_change_pct: Optional[float] = None
+    validation_status: Optional[str] = None

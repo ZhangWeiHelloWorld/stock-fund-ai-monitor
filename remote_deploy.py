@@ -142,8 +142,7 @@ def main():
     commands = [
         # 服务器端带时间戳备份
         "BACKUP_DIR=\"/root/lh_backups/backup_$(date +%Y%m%d_%H%M%S)\" && mkdir -p \"$BACKUP_DIR\" && cp -rf /root/lh/backend/*.db \"$BACKUP_DIR/\" 2>/dev/null || true && cp -rf /root/lh/backend/admin_config.json \"$BACKUP_DIR/\" 2>/dev/null || true && cp -rf /root/lh/backend/cache \"$BACKUP_DIR/\" 2>/dev/null || true && echo \"✅ 历史数据已完整备份到服务器: $BACKUP_DIR\" && ls -la \"$BACKUP_DIR\"",
-        "apt-get update",
-        "apt-get install -y python3 python3-pip python3-venv nodejs npm unzip lsof",
+        "which unzip lsof node npm python3 >/dev/null 2>&1 || (apt-get update && apt-get install -y python3 python3-pip python3-venv nodejs npm unzip lsof)",
         "cd /root && unzip -o lh_deploy.zip",
         "cd /root/lh/backend && python3 -m venv venv && source venv/bin/activate && pip install -r requirements.txt -i https://pypi.tuna.tsinghua.edu.cn/simple",
         "cd /root/lh/frontend && npm install --registry=https://registry.npmmirror.com && npm run build",

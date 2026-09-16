@@ -29,14 +29,44 @@
     </div>
 
     <template v-else-if="marketData">
+      <!-- 🚨 OM-STW 舆情风控预警精简条 -->
+      <div v-if="latestRisk" class="glass-card mb-4 risk-banner-card" :class="'border-' + latestRisk.level">
+        <div class="risk-banner-content">
+          <div class="risk-banner-left">
+            <span class="risk-banner-badge" :class="'level-' + latestRisk.level">
+              {{ latestRisk.level_name }}
+            </span>
+            <span class="risk-banner-lead">
+              ⏱️ 变盘窗口: <strong>{{ latestRisk.lead_time }}</strong>
+            </span>
+            <span class="risk-banner-title" :title="latestRisk.news_title">
+              📰 {{ latestRisk.news_title }}
+            </span>
+          </div>
+          <div class="risk-banner-right">
+            <span class="risk-score-badge">风险分: <strong>{{ latestRisk.score }}</strong></span>
+            <router-link to="/risk-warning" class="btn btn-glass btn-xs">
+              🚨 舆情风控详情 →
+            </router-link>
+          </div>
+        </div>
+      </div>
+
       <!-- Market Indices Overview -->
       <div v-if="marketIndices && marketIndices.length" class="glass-card mb-4 indices-section">
         <div class="section-header">
           <div class="section-title-group">
             <h3>🏛️ 大盘指数</h3>
-            <span v-if="totalMarketTurnover" class="market-turnover-tag">
-              两市/全市场成交额: <strong>{{ totalMarketTurnover }}</strong>
-            </span>
+            <div class="market-overview-stats">
+              <span v-if="totalMarketVolume" class="market-stat-tag" :title="`A股全市场实时总成交量 (折合约 ${totalMarketVolumeShares || '-'})`">
+                <span class="stat-tag-icon">📊</span>
+                A股总成交量: <strong>{{ totalMarketVolume }}</strong>
+              </span>
+              <span v-if="totalMarketTurnover" class="market-stat-tag" title="A股全市场实时总成交额 (沪+深+北)">
+                <span class="stat-tag-icon">💰</span>
+                全市场成交额: <strong>{{ totalMarketTurnover }}</strong>
+              </span>
+            </div>
           </div>
           <div class="indices-actions">
             <button class="btn btn-glass btn-sm" @click="showAllIndices = !showAllIndices" :title="showAllIndices ? '收起仅显示4大核心指数' : '展开显示全部指数'">
@@ -62,17 +92,24 @@
               </span>
             </div>
 
-            <div class="index-points" :class="colorClass(idx.change_pct)">
-              {{ idx.current > 0 ? idx.current.toFixed(2) : '-' }}
+            <div class="index-points-row">
+              <div class="index-points" :class="colorClass(idx.change_pct)">
+                {{ idx.current > 0 ? idx.current.toFixed(2) : '-' }}
+              </div>
+              <div class="index-change-amount" :class="colorClass(idx.change_amount)">
+                {{ idx.change_amount > 0 ? '+' : '' }}{{ idx.change_amount != null ? idx.change_amount.toFixed(2) : '-' }}
+              </div>
             </div>
 
-            <div class="index-change-row">
-              <span class="index-change-amount" :class="colorClass(idx.change_amount)">
-                {{ idx.change_amount > 0 ? '+' : '' }}{{ idx.change_amount != null ? idx.change_amount.toFixed(2) : '-' }}
-              </span>
-              <span class="index-turnover" title="成交额">
-                成交 {{ idx.amount_formatted }}
-              </span>
+            <div class="index-vol-amount-row">
+              <div class="index-stat-pill" :title="`成交量: ${idx.volume_formatted || '-'} (折合约 ${idx.volume_shares_formatted || '-'})`">
+                <span class="stat-pill-label">量</span>
+                <span class="stat-pill-value">{{ idx.volume_formatted || '-' }}</span>
+              </div>
+              <div class="index-stat-pill" title="成交额">
+                <span class="stat-pill-label">额</span>
+                <span class="stat-pill-value">{{ idx.amount_formatted || '-' }}</span>
+              </div>
             </div>
 
             <!-- 日内波动进度条 -->
@@ -424,6 +461,7 @@ import api from '../api'
 
 const showToast = inject('showToast')
 const marketData = ref(null)
+const latestRisk = ref(null)
 const loading = ref(false)
 const autoRefreshCountdown = ref(0)
 let refreshInterval = null
@@ -799,6 +837,9 @@ const displayIndices = computed(() => {
 })
 
 const totalMarketTurnover = computed(() => {
+  if (marketData.value?.summary?.market_turnover_formatted && marketData.value?.summary?.market_turnover_formatted !== '-') {
+    return marketData.value.summary.market_turnover_formatted
+  }
   const indices = marketIndices.value
   if (!indices || !indices.length) return null
   const sh = indices.find(i => i.code === 'sh000001')?.amount || 0
@@ -810,6 +851,46 @@ const totalMarketTurnover = computed(() => {
     return (total / 100000000).toFixed(2) + ' 亿元'
   }
   return (total / 10000).toFixed(2) + ' 万元'
+})
+
+const totalMarketVolume = computed(() => {
+  if (marketData.value?.summary?.market_volume_formatted && marketData.value?.summary?.market_volume_formatted !== '-') {
+    return marketData.value.summary.market_volume_formatted
+  }
+  const indices = marketIndices.value
+  if (!indices || !indices.length) return null
+  const sh = indices.find(i => i.code === 'sh000001')?.volume || 0
+  const sz = indices.find(i => i.code === 'sz399001')?.volume || 0
+  const bj = indices.find(i => i.code === 'bj899050')?.volume || 0
+  const total = sh + sz + bj
+  if (total <= 0) return null
+  if (total >= 100000000) {
+    return (total / 100000000).toFixed(2) + ' 亿手'
+  }
+  if (total >= 10000) {
+    return (total / 10000).toFixed(2) + ' 万手'
+  }
+  return total.toFixed(0) + ' 手'
+})
+
+const totalMarketVolumeShares = computed(() => {
+  if (marketData.value?.summary?.market_volume_shares_formatted && marketData.value?.summary?.market_volume_shares_formatted !== '-') {
+    return marketData.value.summary.market_volume_shares_formatted
+  }
+  const indices = marketIndices.value
+  if (!indices || !indices.length) return null
+  const sh = indices.find(i => i.code === 'sh000001')?.volume || 0
+  const sz = indices.find(i => i.code === 'sz399001')?.volume || 0
+  const bj = indices.find(i => i.code === 'bj899050')?.volume || 0
+  const total = (sh + sz + bj) * 100
+  if (total <= 0) return null
+  if (total >= 100000000) {
+    return (total / 100000000).toFixed(2) + ' 亿股'
+  }
+  if (total >= 10000) {
+    return (total / 10000).toFixed(2) + ' 万股'
+  }
+  return total.toFixed(0) + ' 股'
 })
 
 const getIndexRangePercent = (idx) => {
@@ -951,9 +1032,18 @@ const formatPercent = (val) => {
   return (num >= 0 ? '+' : '') + num.toFixed(2) + '%'
 }
 
+const fetchLatestRisk = async () => {
+  try {
+    latestRisk.value = await api.getLatestRiskRecord()
+  } catch (e) {
+    console.error('Fetch latest risk failed on dashboard:', e)
+  }
+}
+
 const fetchData = async () => {
   try {
     marketData.value = await api.getMarketOverview()
+    fetchLatestRisk()
   } catch (err) {
     console.error(err)
     showToast('行情数据加载失败，请检查网络')
@@ -964,6 +1054,7 @@ const refreshData = async () => {
   loading.value = true
   try {
     marketData.value = await api.refreshMarket()
+    await fetchLatestRisk()
     showToast('✅ 数据已刷新')
   } catch (err) {
     console.error(err)
@@ -1419,7 +1510,18 @@ onUnmounted(() => {
   padding: 20px 24px;
 }
 
+.market-overview-stats {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.market-stat-tag,
 .market-turnover-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
   font-size: 0.82rem;
   color: var(--text-secondary);
   background: rgba(255, 255, 255, 0.05);
@@ -1427,9 +1529,13 @@ onUnmounted(() => {
   border-radius: 8px;
   border: 1px solid var(--border-glass);
 }
+.market-stat-tag strong,
 .market-turnover-tag strong {
   color: var(--accent-primary);
   font-weight: 600;
+}
+.stat-tag-icon {
+  font-size: 0.85rem;
 }
 
 .btn-sm {
@@ -1526,24 +1632,58 @@ onUnmounted(() => {
   border: 1px solid rgba(0, 255, 136, 0.3);
 }
 
+.index-points-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  margin-top: -2px;
+}
+
 .index-points {
   font-size: 1.55rem;
   font-weight: 700;
   font-family: monospace;
   letter-spacing: -0.5px;
-  margin-top: -2px;
-}
-
-.index-change-row {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  font-size: 0.82rem;
 }
 
 .index-change-amount {
+  font-size: 0.92rem;
   font-weight: 600;
   font-family: monospace;
+}
+
+.index-vol-amount-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+  background: rgba(255, 255, 255, 0.03);
+  padding: 4px 8px;
+  border-radius: 6px;
+  border: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.index-stat-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 0.76rem;
+  cursor: default;
+}
+
+.stat-pill-label {
+  font-size: 0.68rem;
+  color: var(--text-muted, rgba(255, 255, 255, 0.45));
+  background: rgba(255, 255, 255, 0.08);
+  padding: 1px 4px;
+  border-radius: 3px;
+  font-weight: 500;
+}
+
+.stat-pill-value {
+  color: var(--text-secondary);
+  font-family: monospace;
+  font-weight: 500;
 }
 
 .index-turnover {
@@ -1603,5 +1743,66 @@ onUnmounted(() => {
   box-shadow: 0 0 6px rgba(255, 255, 255, 0.8);
   transform: translateX(-50%);
   pointer-events: none;
+}
+
+/* 🚨 舆情风控预警精简条 */
+.risk-banner-card {
+  padding: 14px 20px;
+  border-radius: 10px;
+}
+
+.risk-banner-content {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 14px;
+}
+
+.risk-banner-left {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  line-height: 1.5;
+}
+
+.risk-banner-right {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+
+.risk-banner-badge {
+  padding: 4px 12px;
+  border-radius: 14px;
+  font-size: 0.84rem;
+  font-weight: 700;
+  line-height: 1.35;
+}
+
+.risk-banner-lead {
+  font-size: 0.84rem;
+  color: var(--text-secondary);
+  line-height: 1.4;
+}
+
+.risk-banner-title {
+  font-size: 0.88rem;
+  line-height: 1.5;
+  max-width: 500px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.risk-score-badge {
+  font-size: 0.88rem;
+  line-height: 1.4;
+}
+
+.risk-score-badge strong {
+  font-size: 1.15rem;
+  color: var(--accent-primary);
 }
 </style>

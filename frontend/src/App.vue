@@ -34,6 +34,10 @@
             <span class="icon">🎯</span>
             <span class="text">买卖策略</span>
           </router-link>
+          <router-link to="/risk-warning" class="nav-item">
+            <span class="icon">🚨</span>
+            <span class="text">舆情风控</span>
+          </router-link>
           <router-link to="/settings" class="nav-item">
             <span class="icon">⚙️</span>
             <span class="text">系统设置</span>

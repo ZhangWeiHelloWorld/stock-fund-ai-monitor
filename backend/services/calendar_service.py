@@ -931,26 +931,104 @@ async def get_day_detail(date_str: str, user_id: int = 1) -> Dict[str, Any]:
             except Exception:
                 pass
 
-        # 检查是否在 AI 建议记录中已留存持仓快照
-        has_snapshot = False
+        # 构建持仓明细（严格按照：AI真实历史快照 -> 180天真实持仓日账 -> 底层历史K线与净值对齐）
+        cost_map = {}
+        for s in overview.get('stocks', []):
+            cost_map[str(s.get('code'))] = s.get('cost_price', 0.0)
+        for f in overview.get('funds', []):
+            cost_map[str(f.get('code'))] = f.get('cost_nav', 0.0)
+            
+        if not cost_map:
+            try:
+                conn = sqlite3.connect(DB_PATH)
+                conn.row_factory = sqlite3.Row
+                cur = conn.cursor()
+                for r in cur.execute("SELECT code, cost_price FROM stocks"):
+                    cost_map[str(r['code'])] = r['cost_price']
+                for r in cur.execute("SELECT code, cost_nav FROM funds"):
+                    cost_map[str(r['code'])] = r['cost_nav']
+                conn.close()
+            except Exception:
+                pass
+
+        has_holdings = False
+
+        # 1. 检查是否在当日 AI 建议记录中已留存真实持仓快照
         if advice_rows:
             for adv in reversed(advice_rows):
                 if adv.get('holdings_snapshot'):
                     try:
-                        snap_list = json.loads(adv['holdings_snapshot'])
-                        if isinstance(snap_list, list) and snap_list:
-                            holdings_breakdown = snap_list
-                            has_snapshot = True
+                        snap_raw = json.loads(adv['holdings_snapshot'])
+                        if isinstance(snap_raw, dict):
+                            extracted = []
+                            for s in snap_raw.get('stocks', []):
+                                s_code = str(s.get('code'))
+                                extracted.append({
+                                    "type": "股票",
+                                    "code": s_code,
+                                    "name": s.get('name', s_code),
+                                    "shares": s.get('shares', 0),
+                                    "cost": cost_map.get(s_code, s.get('cost_price', 0)),
+                                    "price": round(s.get('current_price', 0), 2),
+                                    "change_pct": round(s.get('change_pct', 0.0), 2),
+                                    "day_profit": round(s.get('day_profit', 0.0), 2)
+                                })
+                            for f in snap_raw.get('funds', []):
+                                f_code = str(f.get('code'))
+                                extracted.append({
+                                    "type": "基金",
+                                    "code": f_code,
+                                    "name": f.get('name', f_code),
+                                    "shares": f.get('shares', 0),
+                                    "cost": cost_map.get(f_code, f.get('cost_nav', 0)),
+                                    "price": round(f.get('current_nav', 0), 4),
+                                    "change_pct": round(f.get('change_pct', 0.0), 2),
+                                    "day_profit": round(f.get('day_profit', 0.0), 2)
+                                })
+                            if extracted:
+                                holdings_breakdown = extracted
+                                has_holdings = True
+                                break
+                        elif isinstance(snap_raw, list) and snap_raw:
+                            holdings_breakdown = snap_raw
+                            has_holdings = True
                             break
                     except Exception:
                         pass
 
-        # 若无快照，从当前实际持仓底仓结构根据当日收益进行真实推演重建
-        if not has_snapshot:
+        # 2. 从 180 天真实持仓量化历史中提取当日各标的真实收盘价/净值、涨跌幅与贡献盈亏
+        if not has_holdings and date_str in cached_180 and cached_180[date_str].get('holdings'):
+            c_holdings = cached_180[date_str]['holdings']
+            extracted = []
+            for item in c_holdings.values():
+                code = str(item.get('code'))
+                h_type = item.get('type')
+                if not h_type:
+                    h_type = '股票' if len(code) == 6 and not code.startswith(('00', '01', '51')) else '基金'
+                shares = float(item.get('shares', 0))
+                price = float(item.get('price', 0))
+                cost = float(cost_map.get(code, item.get('cost', 0)))
+                pct = float(item.get('day_profit_pct', item.get('change_pct', 0.0)))
+                profit = float(item.get('day_profit', 0.0))
+                
+                extracted.append({
+                    "type": h_type,
+                    "code": code,
+                    "name": item.get('name', code),
+                    "shares": shares,
+                    "cost": cost,
+                    "price": round(price, 4 if h_type == '基金' else 2),
+                    "change_pct": round(pct, 2),
+                    "day_profit": round(profit, 2)
+                })
+            if extracted:
+                holdings_breakdown = extracted
+                has_holdings = True
+
+        # 3. 若无上述记录且属于历史交易日，从底层股票/基金历史 K 线与净值序列精准回溯
+        if not has_holdings and is_past and not is_future:
             raw_stocks = [s for s in overview.get('stocks', []) if s.get('is_holding')]
             raw_funds = [f for f in overview.get('funds', []) if f.get('is_holding')]
-            
-            # 若 overview 为空，从数据库直查保底
             if not raw_stocks and not raw_funds:
                 try:
                     conn = sqlite3.connect(DB_PATH)
@@ -964,56 +1042,83 @@ async def get_day_detail(date_str: str, user_id: int = 1) -> Dict[str, Any]:
                 except Exception:
                     pass
 
-            total_holdings_cost = sum(s.get('cost_price', 0) * s.get('shares', 0) for s in raw_stocks) + \
-                                  sum(f.get('cost_nav', 0) * f.get('shares', 0) for f in raw_funds)
-            if total_holdings_cost <= 0:
-                total_holdings_cost = 500000.0
+            from services.strategy.stock_data_provider import fetch_stock_history
+            from services.strategy.fund_data_provider import fetch_fund_history
 
-            # 股票分项
+            extracted = []
             for s in raw_stocks:
-                shares = s.get('shares', 0)
-                cost = s.get('cost_price', 0)
-                pos_val = shares * cost
-                weight = pos_val / total_holdings_cost if total_holdings_cost > 0 else 0.2
-                item_profit = round(day_profit * weight, 2) if is_trading else 0.0
-                item_pct = round((item_profit / pos_val * 100) if pos_val > 0 else day_profit_pct, 2) if is_trading else 0.0
-                price = round(cost * (1 + item_pct / 100), 2)
-                holdings_breakdown.append({
+                code = str(s.get('code'))
+                shares = float(s.get('shares', 0))
+                cost = float(s.get('cost_price', 0))
+                price = cost
+                change_pct = 0.0
+                profit = 0.0
+                try:
+                    s_hist = await fetch_stock_history(code)
+                    records = s_hist.get('history', [])
+                    valid_recs = [r for r in records if r.get('date') <= date_str]
+                    if valid_recs:
+                        cur_rec = valid_recs[-1]
+                        price = float(cur_rec.get('close', cost))
+                        if cur_rec.get('date') == date_str:
+                            change_pct = float(cur_rec.get('change_pct', 0.0))
+                            if len(valid_recs) >= 2:
+                                prev_close = float(valid_recs[-2].get('close', price))
+                                profit = round((price - prev_close) * shares, 2)
+                            else:
+                                profit = round(shares * price * change_pct / (100 + change_pct), 2)
+                except Exception as e:
+                    print(f"[CalendarService] Error fetching stock history for {code}: {e}")
+
+                extracted.append({
                     "type": "股票",
-                    "code": s.get('code'),
-                    "name": s.get('name'),
+                    "code": code,
+                    "name": s.get('name', code),
                     "shares": shares,
                     "cost": cost,
-                    "price": price,
-                    "change_pct": item_pct,
-                    "day_profit": item_profit
+                    "price": round(price, 2),
+                    "change_pct": round(change_pct, 2),
+                    "day_profit": round(profit, 2)
                 })
 
-            # 基金分项（按基金波动特征设定微调系数）
-            beta_map = {
-                '017811': 1.15, # 东方人工智能 (成长进攻)
-                '519674': 1.05, # 银河创新 (硬科技)
-                '007872': 0.85  # 金信稳健 (稳健防守)
-            }
             for f in raw_funds:
-                code = f.get('code')
-                shares = f.get('shares', 0)
-                cost = f.get('cost_nav', 0)
-                pos_val = shares * cost
-                beta = beta_map.get(code, 1.0)
-                item_pct = round(day_profit_pct * beta, 2) if is_trading else 0.0
-                item_profit = round(pos_val * item_pct / 100, 2) if is_trading else 0.0
-                price = round(cost * (1 + item_pct / 100), 4)
-                holdings_breakdown.append({
+                code = str(f.get('code'))
+                shares = float(f.get('shares', 0))
+                cost = float(f.get('cost_nav', 0))
+                price = cost
+                change_pct = 0.0
+                profit = 0.0
+                try:
+                    f_hist = await fetch_fund_history(code)
+                    records = f_hist.get('history', [])
+                    valid_recs = [r for r in records if r.get('date') <= date_str]
+                    if valid_recs:
+                        cur_rec = valid_recs[-1]
+                        price = float(cur_rec.get('nav', cost))
+                        if cur_rec.get('date') == date_str:
+                            change_pct = float(cur_rec.get('change_pct', 0.0))
+                            if len(valid_recs) >= 2:
+                                prev_nav = float(valid_recs[-2].get('nav', price))
+                                profit = round((price - prev_nav) * shares, 2)
+                            else:
+                                profit = round(shares * price * change_pct / (100 + change_pct), 2)
+                except Exception as e:
+                    print(f"[CalendarService] Error fetching fund history for {code}: {e}")
+
+                extracted.append({
                     "type": "基金",
                     "code": code,
-                    "name": f.get('name'),
+                    "name": f.get('name', code),
                     "shares": shares,
                     "cost": cost,
-                    "price": price,
-                    "change_pct": item_pct,
-                    "day_profit": item_profit
+                    "price": round(price, 4),
+                    "change_pct": round(change_pct, 2),
+                    "day_profit": round(profit, 2)
                 })
+
+            if extracted:
+                holdings_breakdown = extracted
+                has_holdings = True
 
     # 4. 构造多维度综合理财决策建议
     daily_shenshas = luck_data.get("daily_shensha", [])

@@ -334,7 +334,79 @@ async def scan_strategy_signals(user_id: int) -> List[Dict[str, Any]]:
         signal_reason = ""
 
         # Strategy Rules
-        if norm_stype == "dip_buying_profit_take":
+        # ── 天机时空策略专属实盘信号 ──
+        if norm_stype == "tianjit":
+            from services.strategy.tianjit_strategy import (
+                compute_daily_bazi_score, compute_monthly_regime,
+                compute_t1_lookahead_signal, get_next_trading_day, resolve_tianjit_action
+            )
+            from services.trading_calendar import get_next_trading_day_info
+            from datetime import date as _date
+            try:
+                today_date = _date.fromisoformat(today_str)
+            except Exception:
+                today_date = _date.today()
+
+            settings = get_settings_dict(user_id)
+            today_bazi = compute_daily_bazi_score(today_date, settings, cfg)
+            monthly_regime = compute_monthly_regime(today_date.year, today_date.month, settings, cfg, as_of=today_date)
+            t1_signal = compute_t1_lookahead_signal(
+                today=today_date,
+                today_score_data=today_bazi,
+                today_change_pct=change_pct,
+                cur_profit_pct=cum_profit_pct,
+                has_position=(cur_shares > 1e-5),
+                settings=settings,
+                cfg=cfg,
+            )
+
+            next_info = get_next_trading_day_info(today_date)
+            next_trading_date = _date.fromisoformat(next_info["next_trading_date"]) if next_info.get("next_trading_date") else None
+            next_trading_bazi = compute_daily_bazi_score(next_trading_date, settings, cfg) if next_trading_date else None
+
+            # 构建信号摘要文本
+            bazi_summary = (
+                f"【天机·{today_bazi['ganzhi']}】score={today_bazi['score']} "
+                f"({today_bazi['rating']}) {today_bazi['ten_god']}"
+                + (f" | 神煞：{'·'.join(today_bazi['shensha_names'])}" if today_bazi['shensha_names'] else "")
+                + f" | 月度大势：{monthly_regime['regime']}"
+            )
+            t1_summary = ""
+            if t1_signal.get("scenario"):
+                t1_summary = f" | T+1前瞻({t1_signal['scenario']}): {t1_signal.get('reason', '')}"
+            if next_trading_bazi:
+                next_label = next_info["display_label"]
+                t1_summary += f" | 下一交易日({next_label}) {next_trading_bazi['ganzhi']}({next_trading_bazi['rating']},score={next_trading_bazi['score']})"
+
+            # Share decision rules with backtesting; cooldown uses exchange trading days.
+            from services.trading_calendar import is_trading_day
+            from datetime import timedelta
+            cursor.execute(
+                "SELECT action, MAX(trade_date) AS last_date FROM strategy_trades "
+                "WHERE strategy_id = ? AND user_id = ? AND trade_date <= ? GROUP BY action",
+                (sid, user_id, today_str),
+            )
+            last_indices = {"BUY": -999, "SELL": -999}
+            for row in cursor.fetchall():
+                last_date = _date.fromisoformat(row["last_date"])
+                elapsed = sum(is_trading_day(last_date + timedelta(days=i))
+                              for i in range(1, (today_date - last_date).days + 1))
+                last_indices[row["action"]] = -elapsed
+            signal_action, buy_amt, sell_r, reason = resolve_tianjit_action(
+                today_date, today_bazi, t1_signal, monthly_regime, change_pct,
+                cur_shares, cur_nav, avg_cost, last_indices["BUY"], last_indices["SELL"], 0, cfg,
+            )
+            if not is_trading_day(today_date):
+                signal_action = None
+            if signal_action == "BUY":
+                suggested_amt = buy_amt
+                suggested_shares = round(buy_amt / cur_nav, 4)
+            elif signal_action == "SELL":
+                suggested_shares = round(cur_shares * min(1.0, max(0.0, sell_r)), 4)
+                suggested_amt = round(suggested_shares * cur_nav, 2)
+            signal_reason = f"{reason} | {bazi_summary}{t1_summary}"
+
+        elif norm_stype == "dip_buying_profit_take":
             def eval_tier_op(actual_val: float, op: str, threshold: float) -> bool:
                 op = (op or ">=").strip()
                 if op in (">=", "≥", "gte"):

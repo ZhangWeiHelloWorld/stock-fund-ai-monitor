@@ -22,6 +22,12 @@ from services.strategy.stock_data_provider import (
 )
 from services.strategy.strategy_templates import PRESET_TEMPLATES, get_preset_template
 from services.strategy.backtest_engine import run_backtest
+from services.strategy.tianjit_strategy import (
+    compute_daily_bazi_score,
+    compute_monthly_regime,
+    compute_t1_lookahead_signal,
+    get_next_trading_day,
+)
 from services.strategy.strategy_service import (
     list_user_strategies,
     get_strategy_by_id,
@@ -33,6 +39,7 @@ from services.strategy.strategy_service import (
     execute_strategy_trade,
     list_strategy_trades
 )
+from database import get_settings_dict
 
 router = APIRouter(prefix="/api/strategies", tags=["strategies"])
 
@@ -194,6 +201,8 @@ async def execute_backtest(req: BacktestRequest, current_user: dict = Depends(ge
 
             # 2. Stock fee structure
             fee_cfg = req.fee_config or await fetch_stock_fee_structure(code)
+            if req.strategy_type in ("tianjit", "stock_tianjit"):
+                fee_cfg = {**fee_cfg, "_bazi_settings": get_settings_dict(current_user["id"])}
 
             # 3. Run backtest engine with stock rules
             res = run_backtest(
@@ -218,6 +227,8 @@ async def execute_backtest(req: BacktestRequest, current_user: dict = Depends(ge
             if not fee_cfg or "redemption_tiers" not in fee_cfg:
                 auto_fee = await fetch_fund_fee_structure(code)
                 fee_cfg = auto_fee
+            if req.strategy_type in ("tianjit", "stock_tianjit"):
+                fee_cfg = {**fee_cfg, "_bazi_settings": get_settings_dict(current_user["id"])}
 
             # 3. Run backtest engine
             res = run_backtest(
@@ -406,3 +417,112 @@ def execute_signal(signal_id: int, req: TradeExecuteRequest, current_user: dict 
 def get_trades(strategy_id: int, current_user: dict = Depends(get_current_user)):
     """List trade records of a strategy."""
     return list_strategy_trades(strategy_id, current_user["id"])
+
+
+# -------------------------------------------------------------
+# TianJi TimingStrategy — 专属接口
+# -------------------------------------------------------------
+
+@router.get("/tianjit/daily-score")
+def get_tianjit_daily_score(
+    date: Optional[str] = Query(None, description="YYYY-MM-DD，默认今日"),
+    current_user: dict = Depends(get_current_user),
+):
+    """
+    返回指定日期的天机时空策略综合评分详情（流日干支、十神、神煞、四层信号分析）。
+    同时返回次日（下一交易日）前瞻评分，便于前端展示「明日预告」。
+    """
+    from datetime import date as date_cls
+    try:
+        target_date = date_cls.fromisoformat(date) if date else date_cls.today()
+    except ValueError:
+        raise HTTPException(status_code=400, detail="日期格式错误，请使用 YYYY-MM-DD")
+
+    settings = get_settings_dict(current_user["id"])
+    cfg = {}  # 使用默认权重；前端可在 query 中传入 strategy_id 获取自定义权重
+
+    today_score = compute_daily_bazi_score(target_date, settings, cfg)
+    monthly_regime = compute_monthly_regime(target_date.year, target_date.month, settings, cfg, as_of=target_date)
+
+    # 计算次日前瞻（严格基于下一开市交易日历法推算，自动跳过周末与法定节假日）
+    from services.trading_calendar import get_next_trading_day_info
+    next_info = get_next_trading_day_info(target_date, max_lookahead=20)
+    tomorrow = date_cls.fromisoformat(next_info["next_trading_date"]) if next_info.get("next_trading_date") else None
+    tomorrow_score = compute_daily_bazi_score(tomorrow, settings, cfg) if tomorrow else None
+
+    return {
+        "date": target_date.isoformat(),
+        "today": today_score,
+        "monthly_regime": monthly_regime,
+        "tomorrow": tomorrow_score,
+        "next_trading_day_info": next_info,
+        "t1_preview": {
+            "tomorrow_date": tomorrow.isoformat() if tomorrow else None,
+            "tomorrow_ganzhi": tomorrow_score["ganzhi"] if tomorrow_score else None,
+            "tomorrow_score": tomorrow_score["score"] if tomorrow_score else None,
+            "tomorrow_signal_level": tomorrow_score["signal_level"] if tomorrow_score else None,
+            "tomorrow_rating": tomorrow_score["rating"] if tomorrow_score else None,
+            "tomorrow_shenshas": tomorrow_score["shensha_names"] if tomorrow_score else [],
+            # 下一实际交易日增强字段
+            "next_trading_date": tomorrow.isoformat() if tomorrow else None,
+            "next_trading_label": next_info.get("display_label", ""),
+            "next_trading_weekday": next_info.get("weekday_cn", ""),
+            "is_weekend_skipped": next_info.get("is_weekend_skipped", False),
+            "skip_reason": next_info.get("skip_reason", ""),
+            "days_ahead": next_info.get("days_ahead", 1),
+        }
+    }
+
+
+async def run_strategy_backtest(req: BacktestRequest, current_user: dict = Depends(get_current_user)):
+    """Run strategy backtest (overrides base route to inject bazi settings for tianjit)."""
+    code = req.fund_code or req.target_code
+    if not code:
+        raise HTTPException(status_code=400, detail="fund_code or target_code required")
+
+    asset_type   = req.asset_type or "fund"
+    strategy_type = req.strategy_type or "dip_buying_profit_take"
+    fee_config   = req.fee_config or {}
+
+    # 为天机时空策略注入系统设置（命盘参数）
+    if strategy_type in ("tianjit", "stock_tianjit"):
+        settings = get_settings_dict(current_user["id"])
+        fee_config["_bazi_settings"] = settings
+
+    if asset_type == "stock":
+        from services.strategy.stock_data_provider import (
+            fetch_stock_history, filter_history_by_date as filter_stock_history, format_stock_symbol
+        )
+        sym = format_stock_symbol(code)
+        history = await fetch_stock_history(sym)
+        if req.start_date or req.end_date:
+            history = filter_stock_history(history, req.start_date, req.end_date)
+        try:
+            sdata = await fetch_stock_data([sym])
+            fund_name = sdata.get(sym, {}).get("name") or sym
+        except Exception:
+            fund_name = sym
+    else:
+        from services.strategy.fund_data_provider import fetch_fund_history, filter_history_by_date as filter_fund_history
+        h_res = await fetch_fund_history(code)
+        history = h_res.get("history", []) if isinstance(h_res, dict) else (h_res or [])
+        if req.start_date or req.end_date:
+            history = filter_fund_history(history, req.start_date, req.end_date)
+        try:
+            fdata = await fetch_fund_data([code])
+            fund_name = fdata.get(code, {}).get("name") or code
+        except Exception:
+            fund_name = code
+
+    result = run_backtest(
+        fund_code=code,
+        fund_name=fund_name,
+        history_data=history,
+        strategy_type=strategy_type,
+        strategy_config=req.strategy_config,
+        fee_config=fee_config,
+        start_date=req.start_date,
+        end_date=req.end_date,
+        asset_type=asset_type,
+    )
+    return result

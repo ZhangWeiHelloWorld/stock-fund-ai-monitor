@@ -566,6 +566,59 @@
         </div>
       </div>
 
+      <!-- 🚨 舆情风控与见顶预警定时设置 (OM-STW 模型) -->
+      <div class="glass-card settings-section">
+        <h3 class="section-title">🚨 舆情风控与见顶预警定时设置</h3>
+
+        <div class="toggle-group">
+          <label class="toggle-label">
+            <span>启用每日官媒舆情风控定时抓取与预警</span>
+            <div class="switch">
+              <input type="checkbox" v-model="settings.risk_cron_enabled" />
+              <span class="slider"></span>
+            </div>
+          </label>
+        </div>
+        <small class="text-secondary" style="margin-top: 4px; display: block; font-size: 0.8rem;">
+          基于 OM-STW 官媒见顶模型：每天在指定时间自动抓取中央大报（央视新闻联播、人民日报、经济日报、新华社等）宏观要闻，排除个股杂音，达到预警阈值时自动推送到企业微信。
+        </small>
+
+        <div class="form-group mt-3" :class="{ 'disabled-group': !settings.risk_cron_enabled }">
+          <label>每日定时执行时间 (默认 20:30，新闻联播播出后黄金发酵期)</label>
+          <input type="time" class="form-control" v-model="settings.risk_cron_time" style="max-width: 160px;" />
+        </div>
+
+        <div class="form-group" :class="{ 'disabled-group': !settings.risk_cron_enabled }">
+          <label>预警触发推送阈值 (满分100分)</label>
+          <div class="input-group" style="max-width: 220px;">
+            <span class="input-prefix">≥</span>
+            <input type="number" min="30" max="95" class="form-control" v-model.number="settings.risk_alert_threshold" placeholder="默认 60 分 (橙色预警)" />
+            <span class="input-suffix">分</span>
+          </div>
+          <small class="text-secondary text-xs mt-1" style="display:block;">
+            💡 60分及以上为橙色诱多顶/红色绝壁顶；低于60分为黄色注意或绿色安全。
+          </small>
+        </div>
+
+        <div class="form-group checkbox-row" :class="{ 'disabled-group': !settings.risk_cron_enabled }">
+          <label class="checkbox-label">
+            <input type="checkbox" v-model="settings.risk_notify_wx" />
+            <span>达到预警阈值时推送到企业微信</span>
+          </label>
+        </div>
+
+        <div class="actions-row">
+          <button class="btn btn-primary" @click="saveSettings">💾 保存风控配置</button>
+          <button class="btn btn-glass" @click="testRiskScheduledCrawl" :disabled="testingRiskCrawl">
+            <span v-if="testingRiskCrawl">🤖 正在抓取官媒研判中...</span>
+            <span v-else>🧪 测试 20:30 官媒要闻抓取与风控研判</span>
+          </button>
+        </div>
+        <div v-if="riskTestResult" class="test-result mt-2" :class="riskTestResult.success ? 'success' : 'error'" style="white-space: pre-wrap; font-size:0.85rem;">
+          {{ riskTestResult.message }}
+        </div>
+      </div>
+
       <!-- 📊 DeepSeek 交易日自动复盘 -->
       <div class="glass-card settings-section">
         <h3 class="section-title">📊 DeepSeek 交易日自动复盘</h3>
@@ -1018,6 +1071,7 @@ const testingDeepseek = ref(false)
 const testingAiNews = ref(false)
 const testingAlert = ref(false)
 const testingCalendarAi = ref(false)
+const testingRiskCrawl = ref(false)
 const showSecret = ref(false)
 const showDeepseekKey = ref(false)
 const testResult = ref(null)
@@ -1026,6 +1080,7 @@ const deepseekTestResult = ref(null)
 const aiNewsTestResult = ref(null)
 const alertTestResult = ref(null)
 const calendarAiTestResult = ref(null)
+const riskTestResult = ref(null)
 const showPromptEditor = ref(false)
 
 const citiesData = ref({})
@@ -1236,6 +1291,11 @@ const settings = ref({
   ai_news_analysis_enabled: true,
   ai_news_schedule: '60min',
   ai_news_prompt_template: DEFAULT_NEWS_PROMPT,
+  risk_cron_enabled: true,
+  risk_cron_time: '20:30',
+  risk_default_model_id: 'om_stw',
+  risk_notify_wx: true,
+  risk_alert_threshold: 60,
   alert_enabled: true,
   alert_monitored_stock_codes: '',
   alert_rise_enabled: true,
@@ -1390,6 +1450,30 @@ const testAiNewsAnalysis = async () => {
   }
 }
 
+const testRiskScheduledCrawl = async () => {
+  testingRiskCrawl.value = true
+  riskTestResult.value = null
+  try {
+    const res = await api.analyzeCrawlNews({
+      model_id: settings.value.risk_default_model_id || 'om_stw',
+      push_to_wx: settings.value.risk_notify_wx !== false
+    })
+    riskTestResult.value = {
+      success: true,
+      message: `✅ 测试抓取分析成功！\n预警等级: ${res.level_name} (${res.score}分)\n诱因新闻: ${res.news_title}\n变盘窗口: ${res.lead_time}\n已同步存档至「舆情风控」历史，请前往「舆情风控」栏目查看完整研判报告。`
+    }
+    showToast(`✅ 测试完成: ${res.level_name} (${res.score}分)`)
+  } catch (e) {
+    const detailMsg = e.response?.data?.detail || e.message || '网络请求异常'
+    riskTestResult.value = {
+      success: false,
+      message: '❌ 测试抓取分析失败: ' + detailMsg
+    }
+    showToast('❌ 测试风控抓取分析失败')
+  } finally {
+    testingRiskCrawl.value = false
+  }
+}
 
 const syncSelectionToSettings = () => {
   settings.value.push_selected_stock_codes = (selectedStockCodes.value || []).join(',')

@@ -233,8 +233,152 @@ PRESET_TEMPLATES = [
             ],
             "cooldown_trading_days": 1
         }
+    },
+    # =========================================================================
+    # TIANJIT STRATEGY TEMPLATES (天机时空策略模板)
+    # =========================================================================
+    {
+        "id": "tianjit",
+        "name": "天机时空策略",
+        "category": "fund",
+        "badge": "时空择时",
+        "description": "融合生辰八字流日五行、神煞、十神四层因子打分（含下一交易日前瞻联动，自动跳过周末及法定休市，周五推演下周一），以「月度大势滤网+流日评分+下一交易日前瞻+价格触发」智能选择买卖时点。今日大跌+下一交易日大吉→逆势加仓；今日有盈+下一交易日凶→提前止盈。所有因子权重均可自由调整。",
+        "default_config": {
+            "initial_capital": 50000.0,
+            "settlement_type": "T+1",
+            "day_master": "", "year_branch": "", "day_branch": "",
+            "score_threshold_s": 88, "score_threshold_a": 75, "score_threshold_b": 60,
+            "monthly_regime_enabled": True,
+            "favorable_elements": ["金", "水"],
+            "pressure_elements": ["火", "土"],
+            "pressure_max_position_pct": 30,
+            "shensha_weights": {
+                "天乙贵人": 10, "太极贵人": 8, "禄神临日": 8,
+                "将星坐镇": 4,  "文昌贵人": 6, "华盖星": 2, "驿马星": 2,
+                "羊刃警示": -10, "咸池惑心": -5
+            },
+            "ten_god_weights": {
+                "正印": 6, "偏印": 5, "比肩": 3, "劫财": 2,
+                "食神": -2, "伤官": -6,
+                "正财": 2, "偏财": 1, "正官": -3, "七杀": -5
+            },
+            "branch_element_weights": {
+                "金": 6, "水": 6, "木": -2, "火": -6, "土": -3
+            },
+            "signal_s": {
+                "enabled": True, "amount": 5000.0,
+                "price_drop_required": 0.0,
+                "price_rise_sell": 5.0, "sell_ratio_on_rise": 0.25
+            },
+            "signal_a": {"enabled": True, "amount": 2000.0, "price_drop_required": 1.5},
+            "signal_b": {"enabled": True, "max_position_pct": 60},
+            "signal_c": {
+                "enabled": True, "sell_ratio": 0.30,
+                "price_drop_sell_trigger": 2.0, "extra_sell_ratio": 0.20,
+                "force_clear_on_drop": 5.0
+            },
+            "sha_enhanced_rules": {
+                "enabled": True, "ten_gods": ["伤官", "七杀"],
+                "buy_only_on_big_drop": True, "buy_drop_pct": 3.0, "buy_amount": 1000.0
+            },
+            "t1_lookahead": {
+                "enabled": True,
+                "tomorrow_good_threshold": 82,
+                "tomorrow_bad_threshold": 62,
+                "tomorrow_danger_threshold": 50,
+                "today_drop_required_pct": 1.0,
+                "tomorrow_boost_multiplier": 1.5,
+                "consecutive_good_boost": 1.2,
+                "max_boost_cap_multiplier": 2.0,
+                "min_profit_to_sell_pct": 0.0,
+                "tomorrow_reduce_ratio": 0.25,
+                "tomorrow_danger_ratio": 0.40,
+                "preview_today_max_score": 74,
+                "preview_tomorrow_threshold": 88,
+                "preview_amount": 1500.0,
+                "skip_if_today_is_danger": True
+            },
+            "global_stop_loss_pct": 8.0,
+            "global_profit_target_pct": 15.0,
+            "global_profit_sell_ratio": 0.40,
+            "global_profit_reset": True,
+            "reset_profit_on_sell": True,
+            "buy_cooldown_days": 1, "sell_cooldown_days": 1,
+            "max_position_limit": 0, "avoid_7day_penalty": True
+        }
+    },
+    {
+        "id": "tianjit",
+        "name": "天机时空策略",
+        "category": "stock",
+        "badge": "时空择时",
+        "description": "融合生辰八字流日五行、神煞、十神四层因子打分（含T+1次日前瞻信号），智能选择A股买卖时点，支持整手取整与印花税。",
+        "default_config": {
+            "initial_capital": 50000.0,
+            "settlement_type": "T+1",
+            "day_master": "", "year_branch": "", "day_branch": "",
+            "score_threshold_s": 88, "score_threshold_a": 75, "score_threshold_b": 60,
+            "monthly_regime_enabled": True,
+            "favorable_elements": ["金", "水"],
+            "pressure_elements": ["火", "土"],
+            "pressure_max_position_pct": 30,
+            "shensha_weights": {
+                "天乙贵人": 10, "太极贵人": 8, "禄神临日": 8,
+                "将星坐镇": 4,  "文昌贵人": 6, "华盖星": 2, "驿马星": 2,
+                "羊刃警示": -10, "咸池惑心": -5
+            },
+            "ten_god_weights": {
+                "正印": 6, "偏印": 5, "比肩": 3, "劫财": 2,
+                "食神": -2, "伤官": -6,
+                "正财": 2, "偏财": 1, "正官": -3, "七杀": -5
+            },
+            "branch_element_weights": {
+                "金": 6, "水": 6, "木": -2, "火": -6, "土": -3
+            },
+            "signal_s": {
+                "enabled": True, "amount": 8000.0,
+                "price_drop_required": 0.0,
+                "price_rise_sell": 5.0, "sell_ratio_on_rise": 0.25
+            },
+            "signal_a": {"enabled": True, "amount": 4000.0, "price_drop_required": 1.5},
+            "signal_b": {"enabled": True, "max_position_pct": 60},
+            "signal_c": {
+                "enabled": True, "sell_ratio": 0.30,
+                "price_drop_sell_trigger": 2.0, "extra_sell_ratio": 0.20,
+                "force_clear_on_drop": 5.0
+            },
+            "sha_enhanced_rules": {
+                "enabled": True, "ten_gods": ["伤官", "七杀"],
+                "buy_only_on_big_drop": True, "buy_drop_pct": 3.0, "buy_amount": 2000.0
+            },
+            "t1_lookahead": {
+                "enabled": True,
+                "tomorrow_good_threshold": 82,
+                "tomorrow_bad_threshold": 62,
+                "tomorrow_danger_threshold": 50,
+                "today_drop_required_pct": 1.0,
+                "tomorrow_boost_multiplier": 1.5,
+                "consecutive_good_boost": 1.2,
+                "max_boost_cap_multiplier": 2.0,
+                "min_profit_to_sell_pct": 0.0,
+                "tomorrow_reduce_ratio": 0.25,
+                "tomorrow_danger_ratio": 0.40,
+                "preview_today_max_score": 74,
+                "preview_tomorrow_threshold": 88,
+                "preview_amount": 2000.0,
+                "skip_if_today_is_danger": True
+            },
+            "global_stop_loss_pct": 8.0,
+            "global_profit_target_pct": 15.0,
+            "global_profit_sell_ratio": 0.40,
+            "global_profit_reset": True,
+            "reset_profit_on_sell": True,
+            "buy_cooldown_days": 1, "sell_cooldown_days": 1,
+            "max_position_limit": 0
+        }
     }
 ]
+
 
 
 def get_preset_template(template_id: str, category: str = None) -> Dict[str, Any]:
