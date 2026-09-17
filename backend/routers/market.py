@@ -11,13 +11,12 @@ async def market_indices(current_user: dict = Depends(get_current_user)):
 
 @router.get("/overview")
 async def market_overview(current_user: dict = Depends(get_current_user)):
-    overview = await get_market_overview(user_id=current_user['id'])
+    overview = await get_market_overview(user_id=current_user['id'], force_refresh=False)
     return overview
 
 @router.get("/refresh")
 async def market_refresh(current_user: dict = Depends(get_current_user)):
-    # Since we are fetching on demand, just call overview
-    overview = await get_market_overview(user_id=current_user['id'])
+    overview = await get_market_overview(user_id=current_user['id'], force_refresh=True)
     return overview
 
 

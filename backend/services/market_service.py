@@ -3,6 +3,8 @@ import re
 import json
 import sqlite3
 import asyncio
+import time
+import copy
 import datetime as dt
 from database import DB_PATH
 from datetime import datetime
@@ -264,59 +266,260 @@ async def fetch_market_indices(index_list: list = None) -> list:
     return indices_result
 
 
-def _determine_fund_nav_status(update_time: str, now: datetime = None) -> tuple:
-    """
-    Determine whether fund data is official NAV ('官方净值') or real-time estimate ('实时估值').
+# In-memory fund quote cache:
+# _fund_cache[code] = {
+#     "data": dict,         # parsed fund quote
+#     "fetched_at": float,  # time.time()
+#     "date": str,          # "YYYY-MM-DD"
+#     "is_final": bool      # True if today's official NAV has been confirmed
+# }
+_fund_cache: dict = {}
+_fund_last_external_fetch: float = 0.0
 
-    Rules:
-    1. On non-trading days (weekends/holidays), it is official NAV ('官方净值').
-    2. On trading days:
-       - Before 18:00 (6:00 PM), the market is open / in trading / just closed, and official NAV for today has not been released yet by fund managers. Intraday numbers are estimated NAV ('实时估值').
-       - After 18:00 (6:00 PM), if update_time matches today's date, official NAV has been released ('官方净值'); otherwise it is still estimated ('实时估值').
+
+def _is_fund_cache_valid(code: str, now: datetime, force_refresh: bool = False) -> bool:
+    """
+    Check if cached fund data is still fresh and valid.
+    Implements intelligent frequency control to prevent IP bans.
+    """
+    cached = _fund_cache.get(code)
+    if not cached:
+        return False
+
+    today_str = now.strftime("%Y-%m-%d")
+    if cached.get("date") != today_str:
+        return False
+
+    # Rule 1: If today's official NAV has already been confirmed (is_final=True),
+    # it will NEVER change again today. Always return cached data! Zero external requests!
+    if cached.get("is_final", False):
+        return True
+
+    elapsed = time.time() - cached.get("fetched_at", 0)
+
+    # If force_refresh is requested, enforce minimum 5s cooldown to prevent rapid click spam
+    if force_refresh:
+        return elapsed < 5.0
+
+    # Rule 2: Non-trading day (weekend / holiday)
+    if not is_trading_day(now):
+        return elapsed < 300.0  # 5 minutes
+
+    # Rule 3: Trading day pre-market (00:00 ~ 09:30, including 09:15 and 09:25)
+    # Market hasn't opened yet, quotes don't fluctuate
+    if now.time() < dt.time(9, 30):
+        return elapsed < 60.0  # 60 seconds
+
+    # Rule 4: Trading day continuous trading (09:30 ~ 15:00)
+    if dt.time(9, 30) <= now.time() < dt.time(15, 0):
+        return elapsed < 15.0  # 15 seconds
+
+    # Rule 5: Trading day post-close before 20:00 (15:00 ~ 20:00)
+    # Quotes are frozen at 15:00 close
+    if dt.time(15, 0) <= now.time() < dt.time(20, 0):
+        return elapsed < 60.0  # 60 seconds
+
+    # Rule 6: Trading day post-close after 20:00 (20:00 ~ 24:00)
+    # User requirement: 控制请求频率 防止被封。Enforce minimum 30s interval between external queries
+    return elapsed < 30.0
+
+
+def _determine_fund_quote(
+    code: str,
+    name: str,
+    official_nav: float,
+    official_prev_nav: float,
+    official_date: str,
+    est_nav: float,
+    est_change_pct: float,
+    est_time: str,
+    fu_date: str,
+    now: datetime = None
+) -> dict:
+    """
+    Unified fund valuation and net asset value (NAV) status determination engine.
+
+    Solves:
+    1. Bug 2: At 09:15 / 09:25 before market opens, fund must NOT use yesterday's intraday estimate (fu_ from T-1).
+       Base NAV is yesterday's official NAV. Today's change is 0.00% and day profit is 0.00.
+    2. Bug 1: After 20:00, if today's official NAV has been released (official_date == today_str),
+       update to official NAV and set status to "官方净值" (is_updated=True, is_final=True).
+       If today's official NAV has NOT been released yet, maintain 15:00 closing estimate (is_updated=False, "实时估值").
     """
     if now is None:
         now = datetime.now()
 
+    today_str = now.strftime("%Y-%m-%d")
+    is_trading = is_trading_day(now)
+    now_time = now.time()
+
+    if official_prev_nav <= 0 and official_nav > 0:
+        official_prev_nav = official_nav
+    if est_nav <= 0 and official_nav > 0:
+        est_nav = official_nav
+
+    # 1. Non-trading day (weekends/holidays)
+    if not is_trading:
+        change_pct = (official_nav - official_prev_nav) / official_prev_nav * 100 if official_prev_nav > 0 else 0.0
+        return {
+            "name": name,
+            "current_nav": official_nav,
+            "last_nav": official_prev_nav,
+            "change_pct": change_pct,
+            "prev_nav": official_prev_nav,
+            "update_time": official_date or today_str,
+            "is_updated": True,
+            "nav_type": "官方净值",
+            "is_final": True
+        }
+
+    # 2. Trading day Pre-market (00:00 ~ 09:30, including 09:15 and 09:25)
+    # [BUG 2 FIX]: Before market opens, strictly use yesterday's official NAV as base.
+    # Today has not traded yet, so change_pct = 0.0% and day_profit = 0.0.
+    # NEVER use yesterday's stale fu_ estimate or stale change_pct!
+    if now_time < dt.time(9, 30):
+        return {
+            "name": name,
+            "current_nav": official_nav,
+            "last_nav": official_nav,
+            "change_pct": 0.0,
+            "prev_nav": official_nav,
+            "update_time": official_date,
+            "is_updated": True,
+            "nav_type": "官方净值",
+            "is_final": False
+        }
+
+    # 3. Trading day, official NAV for today has already been published
+    if official_date == today_str and official_nav > 0:
+        change_pct = (official_nav - official_prev_nav) / official_prev_nav * 100 if official_prev_nav > 0 else 0.0
+        return {
+            "name": name,
+            "current_nav": official_nav,
+            "last_nav": official_prev_nav,
+            "change_pct": change_pct,
+            "prev_nav": official_prev_nav,
+            "update_time": official_date,
+            "is_updated": True,
+            "nav_type": "官方净值",
+            "is_final": True
+        }
+
+    # 4. Trading hours (09:30 ~ 15:00)
+    # If today's intraday estimate is available (fu_date == today_str and est_nav > 0):
+    if dt.time(9, 30) <= now_time < dt.time(15, 0):
+        if fu_date == today_str and est_nav > 0:
+            return {
+                "name": name,
+                "current_nav": est_nav,
+                "last_nav": official_nav if official_nav > 0 else est_nav,
+                "change_pct": est_change_pct,
+                "prev_nav": official_nav if official_nav > 0 else est_nav,
+                "update_time": est_time,
+                "is_updated": False,
+                "nav_type": "实时估值",
+                "is_final": False
+            }
+        else:
+            # If right at 09:30 Sina has not updated fu_ to today yet, stay at yesterday's official NAV
+            return {
+                "name": name,
+                "current_nav": official_nav,
+                "last_nav": official_nav,
+                "change_pct": 0.0,
+                "prev_nav": official_nav,
+                "update_time": official_date,
+                "is_updated": True,
+                "nav_type": "官方净值",
+                "is_final": False
+            }
+
+    # 5. After close (15:00 ~ 20:00, or after 20:00 when official NAV is not yet published)
+    # [BUG 1 FIX]: "未更新净值就依然还是估值"
+    # Maintain 15:00 closing estimate with status "实时估值"
+    closing_est = est_nav if est_nav > 0 else official_nav
+    return {
+        "name": name,
+        "current_nav": closing_est,
+        "last_nav": official_nav if official_nav > 0 else closing_est,
+        "change_pct": est_change_pct if est_nav > 0 else 0.0,
+        "prev_nav": official_nav if official_nav > 0 else closing_est,
+        "update_time": est_time or "15:00:00",
+        "is_updated": False,
+        "nav_type": "实时估值",
+        "is_final": False
+    }
+
+
+def _determine_fund_nav_status(update_time: str, now: datetime = None) -> tuple:
+    """Legacy helper maintained for compatibility."""
+    if now is None:
+        now = datetime.now()
     if not is_trading_day(now):
         return True, "官方净值"
-
     today_str = now.strftime("%Y-%m-%d")
     update_date = update_time.split()[0] if update_time else ''
-
-    if now.time() < dt.time(18, 0):
+    if now.time() < dt.time(9, 30):
+        return True, "官方净值"
+    if now.time() < dt.time(20, 0):
         return False, "实时估值"
-    else:
-        is_updated = (update_date == today_str)
-        return is_updated, "官方净值" if is_updated else "实时估值"
+    is_updated = (update_date == today_str)
+    return is_updated, "官方净值" if is_updated else "实时估值"
 
 
-async def fetch_fund_data(codes: list) -> dict:
-    """Fetch fund estimated and official NAV from Sina Finance API with EastMoney fallback."""
+async def fetch_fund_data(codes: list, force_refresh: bool = False) -> dict:
+    """
+    Fetch fund estimated and official NAV with intelligent in-memory caching and rate limiting.
+    Prevents IP ban and ensures correct NAV and valuation states across all time windows.
+    """
+    global _fund_last_external_fetch
     result = {}
     if not codes:
         return result
 
-    sina_codes = []
+    now = datetime.now()
+    today_str = now.strftime("%Y-%m-%d")
+
+    # 1. First check cache for all requested codes
+    missing_codes = []
     for c in codes:
+        if _is_fund_cache_valid(c, now, force_refresh=force_refresh):
+            result[c] = copy.deepcopy(_fund_cache[c]["data"])
+        else:
+            missing_codes.append(c)
+
+    if not missing_codes:
+        return result
+
+    # 2. Safety throttle on external calls to protect against IP ban
+    now_ts = time.time()
+    if force_refresh and (now_ts - _fund_last_external_fetch < 3.0):
+        # Even with force_refresh, don't hit external API within 3s
+        for c in missing_codes:
+            if c in _fund_cache:
+                result[c] = copy.deepcopy(_fund_cache[c]["data"])
+        if len(result) == len(codes):
+            return result
+
+    _fund_last_external_fetch = now_ts
+
+    sina_codes = []
+    for c in missing_codes:
         sina_codes.append(f"fu_{c}")
         sina_codes.append(f"f_{c}")
-        
+
     url = f"http://hq.sinajs.cn/list={','.join(sina_codes)}"
     headers = {
         "Referer": "http://finance.sina.com.cn/",
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
     }
 
-    now = datetime.now()
-    today_str = now.strftime("%Y-%m-%d")
-
     async with httpx.AsyncClient(timeout=10) as client:
+        fu_data = {}
+        f_data = {}
         try:
             resp = await client.get(url, headers=headers)
             text = resp.content.decode('gbk', errors='replace')
-            
-            fu_data = {}
-            f_data = {}
             for line in text.strip().split('\n'):
                 match_fu = re.search(r'var hq_str_fu_(.*?)=\"(.*?)\";', line)
                 if match_fu:
@@ -325,95 +528,142 @@ async def fetch_fund_data(codes: list) -> dict:
                 match_f = re.search(r'var hq_str_f_(.*?)=\"(.*?)\";', line)
                 if match_f:
                     f_data[match_f.group(1)] = match_f.group(2)
-            
-            for code in codes:
-                if code not in fu_data:
-                    continue
-                fu_fields = fu_data[code].split(',')
-                f_fields = f_data.get(code, "").split(',')
-                
-                if len(fu_fields) >= 8:
-                    name = fu_fields[0]
-                    est_nav = float(fu_fields[2]) if fu_fields[2] else 0.0
-                    est_change_pct = float(fu_fields[6]) if fu_fields[6] else 0.0
-                    est_time = fu_fields[1]
-                    
-                    official_nav = est_nav
-                    official_prev_nav = est_nav
-                    official_date = ""
-                    
-                    if len(f_fields) >= 5:
-                        if f_fields[0]: name = f_fields[0]
-                        official_nav = float(f_fields[1]) if f_fields[1] else est_nav
-                        official_prev_nav = float(f_fields[3]) if f_fields[3] else official_nav
-                        official_date = f_fields[4]
-                    
-                    if not is_trading_day(now):
-                        is_updated = True
-                    else:
-                        is_updated = (official_date == today_str)
-
-                    if is_updated:
-                        nav_type = "官方净值"
-                        current_nav = official_nav
-                        prev_nav = official_prev_nav
-                        change_pct = (current_nav - prev_nav) / prev_nav * 100 if prev_nav > 0 else 0.0
-                        update_time = official_date
-                    else:
-                        nav_type = "实时估值"
-                        current_nav = est_nav
-                        prev_nav = official_nav if official_nav > 0 else est_nav
-                        change_pct = est_change_pct
-                        update_time = est_time
-                    
-                    result[code] = {
-                        "name": name,
-                        "current_nav": current_nav,
-                        "last_nav": prev_nav,
-                        "change_pct": change_pct,
-                        "prev_nav": prev_nav,
-                        "update_time": update_time,
-                        "is_updated": is_updated,
-                        "nav_type": nav_type
-                    }
         except Exception as e:
             print(f"[MarketService] Error fetching Sina fund batch data: {e}")
 
-        # Fallback for codes missing in Sina or missing name
-        for code in codes:
-            if code not in result or not result[code].get("name"):
+        # Process each missing code
+        for code in missing_codes:
+            f_raw = f_data.get(code, "")
+            fu_raw = fu_data.get(code, "")
+
+            name = ""
+            official_nav = 0.0
+            official_prev_nav = 0.0
+            official_date = ""
+
+            if f_raw:
+                f_fields = f_raw.split(',')
+                if len(f_fields) >= 5:
+                    name = f_fields[0]
+                    official_nav = float(f_fields[1]) if f_fields[1] else 0.0
+                    official_prev_nav = float(f_fields[3]) if f_fields[3] else official_nav
+                    official_date = f_fields[4]
+
+            est_nav = 0.0
+            est_change_pct = 0.0
+            est_time = ""
+            fu_date = ""
+
+            if fu_raw:
+                fu_fields = fu_raw.split(',')
+                if len(fu_fields) >= 8:
+                    if not name:
+                        name = fu_fields[0]
+                    est_time = fu_fields[1]
+                    est_nav = float(fu_fields[2]) if fu_fields[2] else 0.0
+                    est_change_pct = float(fu_fields[6]) if fu_fields[6] else 0.0
+                    fu_date = fu_fields[7]
+                    if official_prev_nav <= 0 and fu_fields[3]:
+                        official_prev_nav = float(fu_fields[3])
+
+            quote = None
+            if f_raw or fu_raw:
+                quote = _determine_fund_quote(
+                    code=code,
+                    name=name,
+                    official_nav=official_nav,
+                    official_prev_nav=official_prev_nav,
+                    official_date=official_date,
+                    est_nav=est_nav,
+                    est_change_pct=est_change_pct,
+                    est_time=est_time,
+                    fu_date=fu_date,
+                    now=now
+                )
+
+            # Check EastMoney if:
+            # 1. It is after 20:00 on a trading day and Sina hasn't confirmed today's official NAV yet
+            # 2. Or code was not found in Sina at all
+            is_after_20 = (now.time() >= dt.time(20, 0) and is_trading_day(now))
+            need_em_check = False
+            if quote is None or not quote.get("name"):
+                need_em_check = True
+            elif is_after_20 and not quote.get("is_final", False):
+                need_em_check = True
+
+            if need_em_check:
                 try:
                     em_url = f"https://fundsuggest.eastmoney.com/FundSearch/api/FundSearchAPI.ashx?m=1&key={code}"
-                    em_resp = await client.get(em_url)
+                    em_resp = await client.get(em_url, timeout=4.0)
                     em_json = em_resp.json()
                     datas = em_json.get("Datas", [])
-                    target = None
-                    for d in datas:
-                        if d.get("CODE") == code:
-                            target = d
-                            break
+                    target = next((d for d in datas if d.get("CODE") == code), None)
                     if not target and datas:
                         target = datas[0]
                     if target:
-                        name = target.get("NAME") or target.get("SHORTNAME") or ""
+                        em_name = target.get("NAME") or target.get("SHORTNAME") or ""
                         base_info = target.get("FundBaseInfo") or {}
-                        last_nav = float(base_info.get("DWJZ") or 0.0)
-                        current_nav = last_nav
-                        prev_nav = last_nav
-                        update_time = base_info.get("FSRQ") or ""
-                        is_updated, nav_type = _determine_fund_nav_status(update_time, now)
-                        result[code] = {
-                            "name": name,
-                            "current_nav": current_nav,
-                            "last_nav": last_nav,
-                            "change_pct": 0.0,
-                            "prev_nav": prev_nav,
-                            "update_time": update_time,
-                            "is_updated": is_updated,
-                            "nav_type": nav_type
-                        }
+                        dwjz = float(base_info.get("DWJZ") or 0.0)
+                        fsrq = base_info.get("FSRQ") or ""
+
+                        if quote is None:
+                            # Code wasn't in Sina at all
+                            quote = _determine_fund_quote(
+                                code=code,
+                                name=em_name or code,
+                                official_nav=dwjz,
+                                official_prev_nav=dwjz,
+                                official_date=fsrq,
+                                est_nav=dwjz,
+                                est_change_pct=0.0,
+                                est_time=fsrq,
+                                fu_date=fsrq,
+                                now=now
+                            )
+                        else:
+                            if not quote.get("name") and em_name:
+                                quote["name"] = em_name
+
+                            # If EastMoney has today's official NAV, update quote to official!
+                            if fsrq == today_str and dwjz > 0:
+                                prev_n = quote["prev_nav"] if quote["prev_nav"] > 0 else (official_nav if official_nav > 0 else dwjz)
+                                change_pct = (dwjz - prev_n) / prev_n * 100 if prev_n > 0 else 0.0
+                                quote["current_nav"] = dwjz
+                                quote["last_nav"] = prev_n
+                                quote["prev_nav"] = prev_n
+                                quote["change_pct"] = change_pct
+                                quote["update_time"] = fsrq
+                                quote["is_updated"] = True
+                                quote["nav_type"] = "官方净值"
+                                quote["is_final"] = True
                 except Exception as e:
-                    print(f"[MarketService] Eastmoney fallback error for fund {code}: {e}")
+                    print(f"[MarketService] Eastmoney check error for fund {code}: {e}")
+
+            if quote is None:
+                # If network failed and old cache exists, reuse old cache
+                if code in _fund_cache:
+                    quote = copy.deepcopy(_fund_cache[code]["data"])
+                else:
+                    quote = {
+                        "name": code,
+                        "current_nav": 0.0,
+                        "last_nav": 0.0,
+                        "change_pct": 0.0,
+                        "prev_nav": 0.0,
+                        "update_time": "",
+                        "is_updated": False,
+                        "nav_type": "实时估值",
+                        "is_final": False
+                    }
+
+            # Update in-memory cache
+            _fund_cache[code] = {
+                "data": copy.deepcopy(quote),
+                "fetched_at": time.time(),
+                "date": today_str,
+                "is_final": quote.get("is_final", False)
+            }
+            result[code] = quote
 
     return result
 
@@ -455,7 +705,7 @@ def _get_market_status() -> str:
     return "已收盘"
 
 
-async def get_market_overview(user_id: int = 1) -> dict:
+async def get_market_overview(user_id: int = 1, force_refresh: bool = False) -> dict:
     """Get full market overview with P&L for all stocks and funds of a user."""
     conn = sqlite3.connect(DB_PATH)
     conn.row_factory = sqlite3.Row
@@ -475,7 +725,7 @@ async def get_market_overview(user_id: int = 1) -> dict:
 
     stock_market_data, fund_market_data, indices_data = await asyncio.gather(
         fetch_stock_data(sina_codes),
-        fetch_fund_data(fund_codes),
+        fetch_fund_data(fund_codes, force_refresh=force_refresh),
         fetch_market_indices()
     )
 

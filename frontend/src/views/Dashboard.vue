@@ -16,9 +16,9 @@
           <span class="pulse-dot"></span>
           {{ marketData?.summary?.market_status || '加载中...' }}
         </div>
-        <button class="btn btn-glass" @click="refreshData" :disabled="loading">
+        <button class="btn btn-glass" @click="refreshData" :disabled="loading || refreshCooldown > 0">
           <span :class="{ rotating: loading }">🔄</span>
-          刷新
+          {{ refreshCooldown > 0 ? `冷却中 (${refreshCooldown}s)` : '刷新' }}
         </button>
       </div>
     </header>
@@ -417,7 +417,7 @@
                   {{ formatPercent(fund.change_pct) }}
                 </td>
                 <td>
-                  <span class="nav-status-badge" :class="fund.is_updated ? 'updated' : 'estimating'" :title="fund.is_updated ? '官方净值已更新' : '盘中估值数据'">
+                  <span class="nav-status-badge" :class="fund.is_updated ? 'updated' : 'estimating'" :title="fund.is_updated ? '官方净值已确认' : '今日官方净值尚未公布，当前为估值数据'">
                     {{ fund.is_updated ? '🟢 官方净值' : '⚡ 实时估值' }}
                   </span>
                 </td>
@@ -1050,12 +1050,28 @@ const fetchData = async () => {
   }
 }
 
+const refreshCooldown = ref(0)
+let cooldownTimer = null
+
 const refreshData = async () => {
+  if (loading.value || refreshCooldown.value > 0) return
   loading.value = true
   try {
     marketData.value = await api.refreshMarket()
     await fetchLatestRisk()
     showToast('✅ 数据已刷新')
+
+    // Start 5-second cooldown to prevent rapid spam clicking
+    refreshCooldown.value = 5
+    if (cooldownTimer) clearInterval(cooldownTimer)
+    cooldownTimer = setInterval(() => {
+      if (refreshCooldown.value > 0) {
+        refreshCooldown.value--
+      } else {
+        clearInterval(cooldownTimer)
+        cooldownTimer = null
+      }
+    }, 1000)
   } catch (err) {
     console.error(err)
     showToast('❌ 刷新失败')
@@ -1103,6 +1119,7 @@ onMounted(async () => {
 onUnmounted(() => {
   if (refreshInterval) clearInterval(refreshInterval)
   if (countdownInterval) clearInterval(countdownInterval)
+  if (cooldownTimer) clearInterval(cooldownTimer)
   if (chartInstance) {
     chartInstance.dispose()
     chartInstance = null
