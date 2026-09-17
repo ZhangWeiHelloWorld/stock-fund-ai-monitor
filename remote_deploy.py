@@ -145,7 +145,9 @@ def main():
         "which unzip lsof node npm python3 >/dev/null 2>&1 || (apt-get update && apt-get install -y python3 python3-pip python3-venv nodejs npm unzip lsof)",
         "cd /root && unzip -o lh_deploy.zip",
         "cd /root/lh/backend && python3 -m venv venv && source venv/bin/activate && pip install -r requirements.txt -i https://pypi.tuna.tsinghua.edu.cn/simple",
+        "cd /root/lh/backend && source venv/bin/activate && python3 -c 'import database; database.init_db()'",
         "cd /root/lh/frontend && npm install --registry=https://registry.npmmirror.com && npm run build",
+
         """cat > /etc/systemd/system/stock-monitor.service << 'EOF'
 [Unit]
 Description=Stock Fund Monitor Service

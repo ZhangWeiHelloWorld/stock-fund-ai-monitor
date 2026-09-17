@@ -148,8 +148,10 @@ export default {
   },
   snapshotPreMarketRisk: (data = {}) => api.post('/risk/daily-records/snapshot-premarket', data).then(res => res.data),
   syncCloseIndices: (data = {}) => api.post('/risk/daily-records/sync-close', data).then(res => res.data),
+  calibrateHistoryMarketRecords: (days = 120) => api.post(`/risk/daily-records/calibrate-history?days=${days}`).then(res => res.data),
   updateDailyRiskRecord: (id, data) => api.put(`/risk/daily-records/${id}`, data).then(res => res.data)
 }
+
 
 
 

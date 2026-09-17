@@ -24,8 +24,10 @@ from services.om_stw_service import (
     record_daily_market_close,
     get_daily_risk_market_records,
     update_daily_risk_market_record,
-    get_daily_risk_analytics_summary
+    get_daily_risk_analytics_summary,
+    calibrate_historical_market_records
 )
+
 from services.wxwork_service import send_wxwork_message
 
 router = APIRouter(prefix="/api/risk", tags=["risk"])
@@ -444,4 +446,22 @@ def update_daily_record_api(
         return {"message": "记录已更新", "data": updated}
     except ValueError as e:
         raise HTTPException(status_code=404, detail=str(e))
+
+
+@router.post("/daily-records/calibrate-history")
+async def calibrate_history_api(
+    days: int = Query(120, ge=30, le=250),
+    current_user: dict = Depends(get_current_user)
+):
+    """
+    Fetch 100% authentic real historical index points for all A-share indices from Sina Finance
+    and calibrate/re-sync historical daily risk market records for user.
+    """
+    res = await calibrate_historical_market_records(
+        user_id=current_user["id"],
+        days=days,
+        force_rebuild=True
+    )
+    return res
+
 

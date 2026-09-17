@@ -498,11 +498,16 @@
               <span v-if="snapshotingPre" class="spinner-small"></span>
               📸 立即快照今日开盘前预警
             </button>
+            <button class="btn btn-glass" @click="triggerCalibrateHistory" :disabled="calibratingHistory" title="从权威行情接口校准历史各大核心指数真实点位与走势">
+              <span v-if="calibratingHistory" class="spinner-small"></span>
+              🔄 校准历史真实指数
+            </button>
             <button class="btn btn-primary" @click="triggerSyncCloseIndices" :disabled="syncingClose">
               <span v-if="syncingClose" class="spinner-small"></span>
               📊 立即同步今日各指数收盘点数
             </button>
           </div>
+
         </div>
 
         <!-- 时间段与指数筛选控制条 -->
@@ -1104,7 +1109,9 @@ const dailyAnalytics = ref(null)
 const loadingAnalytics = ref(false)
 const snapshotingPre = ref(false)
 const syncingClose = ref(false)
+const calibratingHistory = ref(false)
 const showDailyDetailModal = ref(false)
+
 const selectedDailyRecord = ref(null)
 
 // 快捷时间范围
@@ -1543,6 +1550,22 @@ const triggerSyncCloseIndices = async () => {
   }
 }
 
+// 触发校准历史各大盘指数真实点位
+const triggerCalibrateHistory = async () => {
+  calibratingHistory.value = true
+  try {
+    const res = await api.calibrateHistoryMarketRecords(120)
+    showToast(res.message || '历史真实各大盘指数点位已成功校准！')
+    await fetchDailyDataAndAnalytics()
+  } catch (e) {
+    console.error(e)
+    showToast('校准历史数据失败: ' + (e.response?.data?.detail || e.message))
+  } finally {
+    calibratingHistory.value = false
+  }
+}
+
+
 // 打开每日对照明细弹窗
 const openDailyDetail = (item) => {
   selectedDailyRecord.value = item
@@ -1587,10 +1610,11 @@ const renderCombinedChart = () => {
   // 预警 MarkPoint
   const markPoints = []
   recordsAsc.forEach(r => {
-    if ((r.pre_market_score || 0) >= 60) {
+    const ptVal = r[indexKey] || (r.indices_data && r.indices_data[idxObj.code]?.current) || null
+    if ((r.pre_market_score || 0) >= 60 && ptVal != null) {
       markPoints.push({
         name: r.pre_market_level_name || '预警',
-        coord: [r.trade_date, r[indexKey] || 3000],
+        coord: [r.trade_date, ptVal],
         value: `${r.pre_market_score}分`,
         itemStyle: {
           color: (r.pre_market_score || 0) >= 75 ? '#ff4444' : '#fbbf24'
@@ -1611,9 +1635,11 @@ const renderCombinedChart = () => {
         if (!params || !params.length) return ''
         const date = params[0].axisValue
         const rec = recordsAsc.find(r => r.trade_date === date) || {}
-        const closeVal = rec[indexKey] ? rec[indexKey].toFixed(2) : '--'
-        const chgVal = rec[indexChgKey] != null ? `${rec[indexChgKey] >= 0 ? '+' : ''}${rec[indexChgKey].toFixed(2)}%` : '--'
-        const chgColor = (rec[indexChgKey] || 0) >= 0 ? '#ff6b6b' : '#00ff88'
+        const ptVal = rec[indexKey] != null ? rec[indexKey] : (rec.indices_data && rec.indices_data[idxObj.code]?.current)
+        const closeVal = ptVal != null ? Number(ptVal).toFixed(2) : '--'
+        const chgPt = rec[indexChgKey] != null ? rec[indexChgKey] : (rec.indices_data && rec.indices_data[idxObj.code]?.change_pct)
+        const chgVal = chgPt != null ? `${chgPt >= 0 ? '+' : ''}${Number(chgPt).toFixed(2)}%` : '--'
+        const chgColor = (chgPt || 0) >= 0 ? '#ff6b6b' : '#00ff88'
         const score = rec.pre_market_score ?? '--'
         const levelName = rec.pre_market_level_name || '安全'
         const news = rec.news_title || '常态宏观走势'
@@ -1625,6 +1651,7 @@ const renderCombinedChart = () => {
         `
       }
     },
+
     legend: {
       data: [idxObj.name, '开盘前风控分值'],
       textStyle: { color: '#94a3b8' },

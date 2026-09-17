@@ -206,4 +206,10 @@ class DailyRiskRecordUpdate(BaseModel):
     cy_change_pct: Optional[float] = None
     kc_close: Optional[float] = None
     kc_change_pct: Optional[float] = None
+    hs300_close: Optional[float] = None
+    hs300_change_pct: Optional[float] = None
+    bj50_close: Optional[float] = None
+    bj50_change_pct: Optional[float] = None
+    turnover_billion: Optional[float] = None
     validation_status: Optional[str] = None
+
