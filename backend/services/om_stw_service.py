@@ -1,3 +1,4 @@
+import asyncio
 import re
 import json
 import sqlite3
@@ -29,13 +30,141 @@ STOCK_FILTER_PATTERN = re.compile(
 )
 
 
+ALL_MARKET_INDICES_CONFIG = [
+    {"code": "sh000001", "secid": "1.000001", "name": "上证指数", "symbol": "000001"},
+    {"code": "sz399006", "secid": "0.399006", "name": "创业板指", "symbol": "399006"},
+    {"code": "sh000688", "secid": "1.000688", "name": "科创50",   "symbol": "000688"},
+    {"code": "sz399001", "secid": "0.399001", "name": "深证成指", "symbol": "399001"},
+    {"code": "sh000300", "secid": "1.000300", "name": "沪深300", "symbol": "000300"},
+    {"code": "bj899050", "secid": "0.899050", "name": "北证50",   "symbol": "899050"},
+]
+
+# 内存缓存，避免频繁高并发抓取 (TTL 30s)
+_market_context_cache = {
+    "timestamp": 0,
+    "data": None
+}
+
+
+async def _fetch_single_index_context(client: httpx.AsyncClient, cfg: Dict[str, str]) -> Optional[Dict[str, Any]]:
+    code = cfg["code"]
+    secid = cfg["secid"]
+    name = cfg["name"]
+    symbol = cfg["symbol"]
+    closes = []
+
+    # 1. 优先腾讯日K线接口 (带前复权)
+    try:
+        url = f"https://web.ifzq.gtimg.cn/appstock/app/fqkline/get?param={code},day,,,40,qfq"
+        headers = {
+            "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36",
+            "Referer": "https://gu.qq.com/"
+        }
+        resp = await client.get(url, headers=headers)
+        if resp.status_code == 200:
+            day_list = resp.json().get("data", {}).get(code, {}).get("day", [])
+            if len(day_list) >= 20:
+                closes = [float(row[2]) for row in day_list]
+    except Exception:
+        pass
+
+    # 2. 东财历史K线备用接口 (例如北证50或腾讯网络抖动)
+    if len(closes) < 20:
+        try:
+            em_url = (
+                f"https://push2his.eastmoney.com/api/qt/stock/kline/get?"
+                f"secid={secid}&fields1=f1,f2,f3,f4,f5,f6&fields2=f51,f52,f53,f54,f55&klt=101&fqt=1&end=20500101&lmt=40"
+            )
+            headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"}
+            resp = await client.get(em_url, headers=headers)
+            if resp.status_code == 200:
+                klines = resp.json().get("data", {}).get("klines", [])
+                if len(klines) >= 20:
+                    closes = [float(k.split(",")[2]) for k in klines]
+        except Exception:
+            pass
+
+    if len(closes) < 20:
+        return None
+
+    current = closes[-1]
+    prev_close = closes[-2]
+    day_change = (current - prev_close) / prev_close * 100
+
+    # 20-day return
+    c_20_ago = closes[-20]
+    gain_20d = (current - c_20_ago) / c_20_ago * 100
+
+    # 20-day MA & BIAS20
+    ma20 = sum(closes[-20:]) / 20.0
+    bias20 = (current - ma20) / ma20 * 100
+
+    # 14-day RSI calculation
+    diffs = [closes[i] - closes[i - 1] for i in range(len(closes) - 14, len(closes))]
+    gains = [d for d in diffs if d > 0]
+    losses = [-d for d in diffs if d < 0]
+    avg_gain = sum(gains) / 14.0 if gains else 0.001
+    avg_loss = sum(losses) / 14.0 if losses else 0.001
+    rs = avg_gain / avg_loss
+    rsi = 100.0 - (100.0 / (1.0 + rs))
+
+    # Classify position
+    is_sh = (code == "sh000001")
+    if is_sh:
+        is_extreme_bottom = current < 2700 or (gain_20d < -12.0 and bias20 < -8.0)
+    else:
+        is_extreme_bottom = (gain_20d < -15.0 and bias20 < -8.0) or rsi < 25.0
+
+    is_overbought = gain_20d > 18.0 or bias20 > 6.0 or rsi > 75.0
+
+    if is_extreme_bottom:
+        pos_desc = "历史极度超跌区/政策底托底区间 (启动见顶豁免)"
+        pos_label = "政策底保护"
+    elif is_overbought:
+        pos_desc = f"高位显著超买区 (近20日涨幅 {gain_20d:+.2f}%, BIAS20 {bias20:+.2f}%, RSI {rsi:.1f})"
+        pos_label = "超买过热"
+    elif gain_20d > 8.0:
+        pos_desc = f"多头稳健上行中位区 (近20日涨幅 {gain_20d:+.2f}%, BIAS20 {bias20:+.2f}%)"
+        pos_label = "多头稳健"
+    elif gain_20d < -6.0 or bias20 < -4.0:
+        pos_desc = f"弱势空头探底区间 (近20日涨幅 {gain_20d:+.2f}%, BIAS20 {bias20:+.2f}%)"
+        pos_label = "弱势整理"
+    else:
+        pos_desc = f"常态震荡整固区间 (近20日涨幅 {gain_20d:+.2f}%, 点位 {current:.2f})"
+        pos_label = "常态整理"
+
+    return {
+        "code": code,
+        "symbol": symbol,
+        "name": name,
+        "index_name": name,
+        "current_price": round(current, 2),
+        "day_change_pct": round(day_change, 2),
+        "gain_20d_pct": round(gain_20d, 2),
+        "ma20": round(ma20, 2),
+        "bias_20": round(bias20, 2),
+        "rsi_14": round(rsi, 1),
+        "position_type": pos_label,
+        "market_position_desc": pos_desc,
+        "is_extreme_bottom": is_extreme_bottom,
+        "is_overbought": is_overbought
+    }
+
+
 async def get_dynamic_market_context() -> Dict[str, Any]:
     """
     Fetch dynamic market historical context (Index performance, 20-day returns, BIAS20, RSI).
-    Used to inform the OM-STW model whether the market is currently overbought, mid-range,
-    or at a historically depressed policy bottom.
+    Maintains 上证指数 as the default benchmark for OM-STW risk model while concurrently
+    computing indicators for core board indices (创业板指, 科创50, 深证成指, 沪深300, 北证50).
     """
-    context = {
+    import time
+    now_ts = time.time()
+    if _market_context_cache["data"] and (now_ts - _market_context_cache["timestamp"] < 30):
+        return dict(_market_context_cache["data"])
+
+    default_sh = {
+        "code": "sh000001",
+        "symbol": "000001",
         "index_name": "上证指数",
         "current_price": 0.0,
         "day_change_pct": 0.0,
@@ -43,71 +172,46 @@ async def get_dynamic_market_context() -> Dict[str, Any]:
         "ma20": 0.0,
         "bias_20": 0.0,
         "rsi_14": 50.0,
+        "position_type": "常态整理",
         "market_position_desc": "常态震荡区间",
         "is_extreme_bottom": False,
         "is_overbought": False
     }
 
+    all_results = []
     try:
-        url = "https://web.ifzq.gtimg.cn/appstock/app/fqkline/get?param=sh000001,day,,,40,qfq"
-        headers = {
-            "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36",
-            "Referer": "https://gu.qq.com/"
-        }
         async with httpx.AsyncClient(timeout=8.0) as client:
-            resp = await client.get(url, headers=headers)
-            if resp.status_code == 200:
-                data = resp.json()
-                day_list = data.get("data", {}).get("sh000001", {}).get("day", [])
-                if len(day_list) >= 20:
-                    closes = [float(row[2]) for row in day_list]
-                    current = closes[-1]
-                    prev_close = closes[-2]
-                    day_change = (current - prev_close) / prev_close * 100
-
-                    # 20-day return
-                    c_20_ago = closes[-20]
-                    gain_20d = (current - c_20_ago) / c_20_ago * 100
-
-                    # 20-day MA & BIAS20
-                    ma20 = sum(closes[-20:]) / 20.0
-                    bias20 = (current - ma20) / ma20 * 100
-
-                    # 14-day RSI calculation
-                    diffs = [closes[i] - closes[i - 1] for i in range(len(closes) - 14, len(closes))]
-                    gains = [d for d in diffs if d > 0]
-                    losses = [-d for d in diffs if d < 0]
-                    avg_gain = sum(gains) / 14.0 if gains else 0.001
-                    avg_loss = sum(losses) / 14.0 if losses else 0.001
-                    rs = avg_gain / avg_loss
-                    rsi = 100.0 - (100.0 / (1.0 + rs))
-
-                    # Classify position
-                    is_extreme_bottom = current < 2700 or (gain_20d < -12.0 and bias20 < -8.0)
-                    is_overbought = gain_20d > 18.0 or bias20 > 6.0 or rsi > 75.0
-
-                    if is_extreme_bottom:
-                        pos_desc = "历史极度超跌区/政策底托底区间 (启动见顶豁免)"
-                    elif is_overbought:
-                        pos_desc = f"高位显著超买区 (近20日涨幅 {gain_20d:+.2f}%, BIAS20 {bias20:+.2f}%, RSI {rsi:.1f})"
-                    elif gain_20d > 8.0:
-                        pos_desc = f"多头稳健上行中位区 (近20日涨幅 {gain_20d:+.2f}%, BIAS20 {bias20:+.2f}%)"
-                    else:
-                        pos_desc = f"常态震荡整固区间 (近20日涨幅 {gain_20d:+.2f}%, 点位 {current:.2f})"
-
-                    context.update({
-                        "current_price": round(current, 2),
-                        "day_change_pct": round(day_change, 2),
-                        "gain_20d_pct": round(gain_20d, 2),
-                        "ma20": round(ma20, 2),
-                        "bias_20": round(bias20, 2),
-                        "rsi_14": round(rsi, 1),
-                        "market_position_desc": pos_desc,
-                        "is_extreme_bottom": is_extreme_bottom,
-                        "is_overbought": is_overbought
-                    })
+            tasks = [_fetch_single_index_context(client, cfg) for cfg in ALL_MARKET_INDICES_CONFIG]
+            all_results = await asyncio.gather(*tasks, return_exceptions=True)
     except Exception as e:
         print(f"[OM-STW Service] Error fetching dynamic market context: {e}")
+
+    valid_indices: List[Dict[str, Any]] = [r for r in all_results if isinstance(r, dict) and r]
+
+    # 提取上证指数作为大盘基准
+    sh_ctx = next((i for i in valid_indices if i["code"] == "sh000001"), default_sh)
+    other_indices = [i for i in valid_indices if i["code"] != "sh000001"]
+
+    # 组装返回字典：顶层字段保持对大盘（上证指数）的完全一致
+    context = {
+        "index_name": sh_ctx["index_name"],
+        "current_price": sh_ctx["current_price"],
+        "day_change_pct": sh_ctx["day_change_pct"],
+        "gain_20d_pct": sh_ctx["gain_20d_pct"],
+        "ma20": sh_ctx["ma20"],
+        "bias_20": sh_ctx["bias_20"],
+        "rsi_14": sh_ctx["rsi_14"],
+        "position_type": sh_ctx.get("position_type", "常态整理"),
+        "market_position_desc": sh_ctx["market_position_desc"],
+        "is_extreme_bottom": sh_ctx["is_extreme_bottom"],
+        "is_overbought": sh_ctx["is_overbought"],
+        "other_indices": other_indices,
+        "all_indices": valid_indices
+    }
+
+    if valid_indices:
+        _market_context_cache["timestamp"] = now_ts
+        _market_context_cache["data"] = context
 
     return context
 
@@ -563,6 +667,12 @@ async def run_daily_official_news_analysis(user_id: int = 1) -> Tuple[bool, str]
     score = res.get("score", 0)
     level_name = res.get("level_name", "")
 
+    from services.trading_calendar import get_next_trading_day
+    now = datetime.now()
+    # 20:30 定时抓取的官媒新闻属于盘后黄金发酵期，研判的是下一个交易日 (T+1) 的开盘前风险
+    next_tday = get_next_trading_day(now)
+    target_trade_date = next_tday.strftime("%Y-%m-%d") if next_tday else now.strftime("%Y-%m-%d")
+
     if notify_wx and score >= threshold:
         wx_msg = format_risk_alert_wx_message(res)
         send_wxwork_message(wx_msg, user_id=user_id)
@@ -570,15 +680,15 @@ async def run_daily_official_news_analysis(user_id: int = 1) -> Tuple[bool, str]
         conn.execute("UPDATE risk_analysis_records SET pushed_to_wx = 1 WHERE id = ?", (res["id"],))
         conn.commit()
         conn.close()
-        # Also auto-update pre-market snapshot with this latest analysis
+        # Also auto-update pre-market snapshot with this latest analysis for NEXT trading day
         try:
-            await record_daily_pre_market_risk(user_id=user_id, risk_record_id=res.get("id"))
+            await record_daily_pre_market_risk(user_id=user_id, trade_date=target_trade_date, risk_record_id=res.get("id"))
         except Exception as e:
             print(f"[OM-STW] Failed to auto-update daily premarket record: {e}")
         return True, f"完成定时分析并触发企微推送: {level_name} ({score}分)"
 
     try:
-        await record_daily_pre_market_risk(user_id=user_id, risk_record_id=res.get("id"))
+        await record_daily_pre_market_risk(user_id=user_id, trade_date=target_trade_date, risk_record_id=res.get("id"))
     except Exception as e:
         print(f"[OM-STW] Failed to auto-update daily premarket record: {e}")
 
@@ -589,14 +699,22 @@ async def record_daily_pre_market_risk(
     user_id: int = 1,
     trade_date: Optional[str] = None,
     risk_record_id: Optional[int] = None,
+    force_update_closed: bool = False,
     **kwargs
 ) -> Dict[str, Any]:
     """
-    Record or update the pre-market risk evaluation snapshot for a trading day (defaults to today).
+    Record or update the pre-market risk evaluation snapshot for a trading day (defaults to today, or next trading day if after 15:00).
     Captures risk score, level, lead time window, news title, and action guide.
     """
+    from services.trading_calendar import get_next_trading_day, is_trading_day
+
+    now = datetime.now()
     if not trade_date:
-        trade_date = datetime.now().strftime("%Y-%m-%d")
+        if now.hour >= 15 or not is_trading_day(now):
+            next_tday = get_next_trading_day(now)
+            trade_date = next_tday.strftime("%Y-%m-%d") if next_tday else now.strftime("%Y-%m-%d")
+        else:
+            trade_date = now.strftime("%Y-%m-%d")
 
     conn = sqlite3.connect(DB_PATH)
     conn.row_factory = sqlite3.Row
@@ -655,6 +773,19 @@ async def record_daily_pre_market_risk(
     existing = cursor.fetchone()
 
     if existing:
+        # 历史已收盘记录保护锁：如果该交易日已收盘并回填指数（sh_close 不为空且>0），锁定历史开盘前风控分值，禁止覆盖篡改！
+        is_already_closed = (existing["sh_close"] is not None and existing["sh_close"] > 0)
+        if is_already_closed and not force_update_closed:
+            print(f"[OM-STW] 交易日 {trade_date} 已收盘归因完毕 (收盘点位: {existing['sh_close']})，锁定历史开盘前风控分值 ({existing['pre_market_score']}分)，跳过覆写。")
+            conn.close()
+            row = dict(existing)
+            if row.get("action_guide") and isinstance(row["action_guide"], str):
+                try:
+                    row["action_guide"] = json.loads(row["action_guide"])
+                except Exception:
+                    pass
+            return row
+
         cursor.execute('''
             UPDATE daily_risk_market_records SET
                 pre_market_score = ?,
@@ -882,8 +1013,9 @@ async def get_daily_risk_market_records(
     today_row = cursor.fetchone()
     conn.close()
 
-    # If today doesn't exist, create it
-    if not today_row:
+    # If today doesn't exist and today is a trading day, create it
+    from services.trading_calendar import is_trading_day
+    if not today_row and is_trading_day(now):
         try:
             await record_daily_pre_market_risk(user_id=user_id, trade_date=today_str)
             if now.hour >= 15:

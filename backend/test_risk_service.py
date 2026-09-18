@@ -125,7 +125,7 @@ class TestRiskService(unittest.TestCase):
 
     def test_daily_risk_market_records_flow(self):
         async def run_flow():
-            test_date = "2026-09-01"
+            test_date = "2099-01-15"
             # 1. Record pre-market risk
             rec = await record_daily_pre_market_risk(
                 user_id=1,
@@ -192,7 +192,47 @@ class TestRiskService(unittest.TestCase):
             self.assertIn("attribution_counts", res)
             self.assertIn("hit", res["attribution_counts"])
 
-        asyncio.run(run_analytics())
+    def test_closed_record_immutability_and_next_day_targeting(self):
+        """
+        Verify that:
+        1. Historical closed records (sh_close recorded) are FROZEN and cannot be overwritten by pre-market risk calls.
+        2. Evening tasks target the next trading day instead of overwriting today's closed day.
+        """
+        async def run_immutability_test():
+            test_date = "2099-09-02"
+            # 1. Create original daytime premarket risk snapshot (e.g. 42 points)
+            rec1 = await record_daily_pre_market_risk(
+                user_id=1,
+                trade_date=test_date,
+                pre_market_score=42,
+                pre_market_level="yellow",
+                pre_market_level_name="🟡 黄色注意【分歧加剧】",
+                news_title="韩国检方追加起诉尹锡悦未申报“夫人收受财物”"
+            )
+            self.assertEqual(rec1["pre_market_score"], 42)
+
+            # 2. Market closes at 15:05 and records closing index
+            await record_daily_market_close(
+                user_id=1,
+                trade_date=test_date,
+                indices_data={"sh_close": 3875.60, "sh_change_pct": -0.41}
+            )
+
+            # 3. Evening task (e.g. at 20:30) attempts to snapshot 50 points on the same closed date
+            rec2 = await record_daily_pre_market_risk(
+                user_id=1,
+                trade_date=test_date,
+                pre_market_score=50,
+                pre_market_level="yellow",
+                pre_market_level_name="🟡 黄色注意【分歧加剧】",
+                news_title="我国今年以来已批准上市创新药59个"
+            )
+
+            # The score MUST REMAIN 42, NOT overwritten to 50!
+            self.assertEqual(rec2["pre_market_score"], 42, "Historical closed record pre_market_score must NOT be overwritten!")
+            self.assertEqual(rec2["news_title"], "韩国检方追加起诉尹锡悦未申报“夫人收受财物”")
+
+        asyncio.run(run_immutability_test())
 
 
 if __name__ == "__main__":

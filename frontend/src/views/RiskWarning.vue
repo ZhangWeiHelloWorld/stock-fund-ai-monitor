@@ -226,6 +226,140 @@
             </div>
           </div>
 
+          <!-- 核心板块与宽基指数技术面卡片 (创业板、科创板、深成指等) -->
+          <div class="glass-card mb-3 other-indices-card" v-if="otherIndicesList && otherIndicesList.length">
+            <div class="other-indices-header">
+              <h4 class="card-subtitle m-0">📈 核心板块指数动态技术面 (科创/创业/深成等参考)</h4>
+              <div class="view-mode-toggle">
+                <button 
+                  type="button" 
+                  class="btn btn-glass btn-xs" 
+                  :class="{ active: otherIndicesViewMode === 'detail' }" 
+                  @click="otherIndicesViewMode = 'detail'"
+                  title="聚焦单指数完整指标"
+                >
+                  🔍 单指详解
+                </button>
+                <button 
+                  type="button" 
+                  class="btn btn-glass btn-xs" 
+                  :class="{ active: otherIndicesViewMode === 'all' }" 
+                  @click="otherIndicesViewMode = 'all'"
+                  title="一屏并列对比全部指数"
+                >
+                  📊 多指全览
+                </button>
+              </div>
+            </div>
+
+            <!-- 板块快速切换 Tab 胶囊栏 (单指详解模式下) -->
+            <div class="index-pills-row mt-2" v-if="otherIndicesViewMode === 'detail'">
+              <button
+                type="button"
+                v-for="idx in otherIndicesList"
+                :key="idx.code"
+                class="index-pill-btn"
+                :class="{ active: selectedOtherIndexCode === idx.code }"
+                @click="selectedOtherIndexCode = idx.code"
+              >
+                <span class="pill-name">{{ getIndexIcon(idx.code) }}{{ idx.name || idx.index_name }}</span>
+                <span class="pill-chg" :class="idx.day_change_pct >= 0 ? 'text-green' : 'text-red'">
+                  {{ idx.day_change_pct >= 0 ? '+' : '' }}{{ idx.day_change_pct }}%
+                </span>
+              </button>
+            </div>
+
+            <!-- 模式 1: 单指数详解 (和图二一模一样的 6 个指标卡片格 + 底部说明) -->
+            <template v-if="otherIndicesViewMode === 'detail' && currentSelectedOtherIndex">
+              <div class="market-metrics-grid mt-2">
+                <div class="metric-item">
+                  <div class="metric-label">{{ currentSelectedOtherIndex.name || currentSelectedOtherIndex.index_name }}</div>
+                  <div class="metric-val text-accent">{{ currentSelectedOtherIndex.current_price }}</div>
+                </div>
+                <div class="metric-item">
+                  <div class="metric-label">当日涨跌</div>
+                  <div class="metric-val" :class="currentSelectedOtherIndex.day_change_pct >= 0 ? 'text-green' : 'text-red'">
+                    {{ currentSelectedOtherIndex.day_change_pct >= 0 ? '+' : '' }}{{ currentSelectedOtherIndex.day_change_pct }}%
+                  </div>
+                </div>
+                <div class="metric-item">
+                  <div class="metric-label">近20日涨幅</div>
+                  <div class="metric-val" :class="currentSelectedOtherIndex.gain_20d_pct >= 0 ? 'text-green' : 'text-red'">
+                    {{ currentSelectedOtherIndex.gain_20d_pct >= 0 ? '+' : '' }}{{ currentSelectedOtherIndex.gain_20d_pct }}%
+                  </div>
+                </div>
+                <div class="metric-item">
+                  <div class="metric-label">BIAS20 乖离率</div>
+                  <div class="metric-val" :class="currentSelectedOtherIndex.bias_20 >= 0 ? 'text-green' : 'text-red'">
+                    {{ currentSelectedOtherIndex.bias_20 >= 0 ? '+' : '' }}{{ currentSelectedOtherIndex.bias_20 }}%
+                  </div>
+                </div>
+                <div class="metric-item">
+                  <div class="metric-label">14日 RSI</div>
+                  <div class="metric-val">{{ currentSelectedOtherIndex.rsi_14 }}</div>
+                </div>
+                <div class="metric-item">
+                  <div class="metric-label">位置属性</div>
+                  <div class="metric-val text-sm" :class="currentSelectedOtherIndex.is_overbought ? 'text-red' : (currentSelectedOtherIndex.is_extreme_bottom ? 'text-green' : '')">
+                    {{ currentSelectedOtherIndex.position_type || (currentSelectedOtherIndex.is_extreme_bottom ? '政策底保护' : (currentSelectedOtherIndex.is_overbought ? '超买过热' : '常态整理')) }}
+                  </div>
+                </div>
+              </div>
+              <div class="market-context-desc mt-2">
+                💡 <strong>技术面参考逻辑</strong>: {{ currentSelectedOtherIndex?.market_position_desc }}
+                <span v-if="currentSelectedOtherIndex?.is_extreme_bottom" class="text-green ml-1">(处于底部超跌区间)</span>
+              </div>
+            </template>
+
+            <!-- 模式 2: 多指数并列对比矩阵 (多指全览模式) -->
+            <div class="other-indices-multi-grid mt-2" v-else-if="otherIndicesViewMode === 'all'">
+              <div 
+                v-for="idx in otherIndicesList" 
+                :key="idx.code" 
+                class="sub-index-card"
+                @click="selectAndSwitchDetail(idx.code)"
+                :title="`点击切换查看 ${idx.name || idx.index_name} 详情`"
+              >
+                <div class="sub-card-top">
+                  <div class="sub-title-group">
+                    <span class="sub-name">{{ getIndexIcon(idx.code) }}{{ idx.name || idx.index_name }}</span>
+                    <span class="sub-symbol">{{ idx.symbol }}</span>
+                  </div>
+                  <div class="sub-right-price">
+                    <span class="sub-price">{{ idx.current_price }}</span>
+                    <span class="sub-chg" :class="idx.day_change_pct >= 0 ? 'text-green' : 'text-red'">
+                      {{ idx.day_change_pct >= 0 ? '+' : '' }}{{ idx.day_change_pct }}%
+                    </span>
+                  </div>
+                </div>
+                <div class="sub-card-body">
+                  <div class="sub-metric">
+                    <span class="lbl">20日涨幅:</span>
+                    <span class="val font-mono" :class="idx.gain_20d_pct >= 0 ? 'text-green' : 'text-red'">
+                      {{ idx.gain_20d_pct >= 0 ? '+' : '' }}{{ idx.gain_20d_pct }}%
+                    </span>
+                  </div>
+                  <div class="sub-metric">
+                    <span class="lbl">BIAS20:</span>
+                    <span class="val font-mono" :class="idx.bias_20 >= 0 ? 'text-green' : 'text-red'">
+                      {{ idx.bias_20 >= 0 ? '+' : '' }}{{ idx.bias_20 }}%
+                    </span>
+                  </div>
+                  <div class="sub-metric">
+                    <span class="lbl">14日RSI:</span>
+                    <span class="val font-mono">{{ idx.rsi_14 }}</span>
+                  </div>
+                  <div class="sub-metric">
+                    <span class="lbl">属性:</span>
+                    <span class="val badge-pos" :class="idx.is_overbought ? 'text-red' : (idx.is_extreme_bottom ? 'text-green' : '')">
+                      {{ idx.position_type || '常态整理' }}
+                    </span>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
           <!-- 分析结果卡片 -->
           <div v-if="manualResult" class="glass-card result-card" :class="'border-' + manualResult.level">
             <div class="result-header">
@@ -1056,6 +1190,36 @@ const activeTab = ref('manual') // 'manual', 'crawl', 'models', 'history', 'dail
 // 顶部最新记录与大盘
 const latestRecord = ref(null)
 const marketContext = ref(null)
+
+// 核心板块与宽基指数 (创业板、科创板等) 技术面状态
+const selectedOtherIndexCode = ref('sz399006') // 默认创业板指
+const otherIndicesViewMode = ref('detail') // 'detail' | 'all'
+
+const otherIndicesList = computed(() => {
+  return marketContext.value?.other_indices || []
+})
+
+const currentSelectedOtherIndex = computed(() => {
+  const list = otherIndicesList.value
+  if (!list.length) return null
+  const found = list.find(item => item.code === selectedOtherIndexCode.value)
+  return found || list[0]
+})
+
+const selectAndSwitchDetail = (code) => {
+  selectedOtherIndexCode.value = code
+  otherIndicesViewMode.value = 'detail'
+}
+
+const getIndexIcon = (code) => {
+  if (code === 'sz399006') return '🚀 ' // 创业板
+  if (code === 'sh000688') return '🔬 ' // 科创板
+  if (code === 'sz399001') return '🏙️ ' // 深证成指
+  if (code === 'sh000300') return '🏢 ' // 沪深300
+  if (code === 'bj899050') return '🏛️ ' // 北证50
+  return '📈 '
+}
+
 const cronEnabled = ref(true)
 const cronTime = ref('20:30')
 
@@ -2411,6 +2575,175 @@ textarea.form-control {
   border-radius: 8px;
   margin-top: 14px;
   border: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+/* 核心板块与其他指数技术面卡片样式 */
+.other-indices-card {
+  position: relative;
+  transition: all 0.3s ease;
+}
+
+.other-indices-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.view-mode-toggle {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.view-mode-toggle .btn.active {
+  background: rgba(0, 210, 255, 0.18);
+  border-color: rgba(0, 210, 255, 0.5);
+  color: #00d2ff;
+  font-weight: 600;
+}
+
+.index-pills-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  overflow-x: auto;
+  padding-bottom: 4px;
+}
+
+.index-pill-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid var(--border-glass);
+  border-radius: 20px;
+  color: var(--text-secondary);
+  font-size: 0.82rem;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: all 0.2s ease;
+}
+
+.index-pill-btn:hover {
+  background: rgba(255, 255, 255, 0.08);
+  border-color: rgba(255, 255, 255, 0.2);
+  color: #fff;
+}
+
+.index-pill-btn.active {
+  background: rgba(0, 210, 255, 0.15);
+  border-color: #00d2ff;
+  color: #fff;
+  font-weight: 600;
+  box-shadow: 0 0 12px rgba(0, 210, 255, 0.25);
+}
+
+.pill-name {
+  font-weight: 500;
+}
+
+.pill-chg {
+  font-size: 0.76rem;
+  font-family: monospace;
+}
+
+/* 多指全览网格 */
+.other-indices-multi-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 12px;
+}
+
+.sub-index-card {
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid var(--border-glass);
+  border-radius: 8px;
+  padding: 10px 12px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.sub-index-card:hover {
+  background: rgba(255, 255, 255, 0.06);
+  border-color: rgba(0, 210, 255, 0.4);
+  transform: translateY(-2px);
+}
+
+.sub-card-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+  padding-bottom: 6px;
+  margin-bottom: 8px;
+}
+
+.sub-title-group {
+  display: flex;
+  align-items: baseline;
+  gap: 4px;
+}
+
+.sub-name {
+  font-size: 0.88rem;
+  font-weight: 600;
+  color: #e2e8f0;
+}
+
+.sub-symbol {
+  font-size: 0.72rem;
+  color: var(--text-secondary);
+}
+
+.sub-right-price {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.sub-price {
+  font-size: 0.92rem;
+  font-weight: 700;
+  color: var(--accent-primary, #00d2ff);
+  font-family: monospace;
+}
+
+.sub-chg {
+  font-size: 0.8rem;
+  font-weight: 600;
+  font-family: monospace;
+}
+
+.sub-card-body {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px;
+  font-size: 0.76rem;
+}
+
+.sub-metric {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 4px;
+}
+
+.sub-metric .lbl {
+  color: var(--text-secondary);
+}
+
+.sub-metric .val {
+  font-weight: 600;
+}
+
+.badge-pos {
+  font-size: 0.72rem;
+  padding: 1px 4px;
+  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.05);
 }
 
 /* 官媒要闻网格 */
