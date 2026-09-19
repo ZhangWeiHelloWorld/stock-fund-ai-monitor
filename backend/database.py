@@ -81,62 +81,119 @@ def seed_extended_daily_risk_records(cursor, user_id: int = 1, overwrite_distort
     import random
     from datetime import datetime
 
+    # Use Eastmoney official historical day K-line API which provides 100% authentic close points and REAL turnover amounts (amount)
     symbols = [
-        ('sh000001', '上证指数', 'sh'),
-        ('sz399001', '深证成指', 'sz'),
-        ('sz399006', '创业板指', 'cy'),
-        ('sh000688', '科创50', 'kc'),
-        ('sh000300', '沪深300', 'hs300'),
-        ('bj899050', '北证50', 'bj50')
+        ('sh000001', '1.000001', '上证指数', 'sh'),
+        ('sz399001', '0.399001', '深证成指', 'sz'),
+        ('sz399006', '0.399006', '创业板指', 'cy'),
+        ('sh000688', '1.000688', '科创50', 'kc'),
+        ('sh000300', '1.000300', '沪深300', 'hs300'),
+        ('bj899050', '0.899050', '北证50', 'bj50')
     ]
 
-    all_kline = {}
+    date_map = {}
     try:
-        for code, name, key in symbols:
-            url = f'https://quotes.sina.cn/cn/api/json_v2.php/CN_MarketDataService.getKLineData?symbol={code}&scale=240&ma=no&datalen=120'
-            req = urllib.request.Request(url, headers={'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'})
+        for code, secid, name, key in symbols:
+            em_url = f'http://push2his.eastmoney.com/api/qt/stock/kline/get?secid={secid}&fields1=f1,f2,f3,f4,f5,f6&fields2=f51,f52,f53,f54,f55,f56,f57,f58,f59,f60,f61&klt=101&fqt=1&end=20500101&lmt=120'
+            req = urllib.request.Request(em_url, headers={'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'})
             with urllib.request.urlopen(req, timeout=6) as resp:
-                all_kline[code] = json.loads(resp.read().decode('utf-8'))
+                em_json = json.loads(resp.read().decode('utf-8'))
+                for line in em_json.get('data', {}).get('klines', []):
+                    parts = line.split(',')
+                    d = parts[0]
+                    if d not in date_map:
+                        date_map[d] = {}
+                    date_map[d][code] = {
+                        'name': name,
+                        'open': float(parts[1]),
+                        'close': float(parts[2]),
+                        'high': float(parts[3]),
+                        'low': float(parts[4]),
+                        'volume': float(parts[5]),
+                        'amount': float(parts[6]),
+                        'change_pct': float(parts[8])
+                    }
     except Exception as e:
-        print(f"[database] Remote Sina kline fetch notice: {e}")
+        print(f"[database] Remote Eastmoney kline fetch notice: {e}")
 
-    # If Sina failed, try Tencent fallback for major symbols
-    if not all_kline.get('sh000001'):
+    # If Eastmoney failed, try Sina fallback
+    if not date_map or 'sh000001' not in next(iter(date_map.values()), {}):
+        all_kline = {}
         try:
-            for code, name, key in symbols[:5]:
-                t_url = f'https://web.ifzq.gtimg.cn/appstock/app/fqkline/get?param={code},day,,,120,qfq'
-                t_req = urllib.request.Request(t_url, headers={'User-Agent': 'Mozilla/5.0', 'Referer': 'https://gu.qq.com/'})
-                with urllib.request.urlopen(t_req, timeout=6) as resp:
-                    t_json = json.loads(resp.read().decode('utf-8'))
-                    sec_data = t_json.get('data', {}).get(code, {})
-                    days = sec_data.get('day', []) or sec_data.get('qfqday', [])
-                    all_kline[code] = [{'day': d[0], 'open': d[1], 'close': d[2], 'high': d[3], 'low': d[4], 'volume': d[5]} for d in days if len(d) >= 5]
-        except Exception as te:
-            print(f"[database] Tencent fallback notice: {te}")
+            for code, secid, name, key in symbols:
+                url = f'https://quotes.sina.cn/cn/api/json_v2.php/CN_MarketDataService.getKLineData?symbol={code}&scale=240&ma=no&datalen=120'
+                req = urllib.request.Request(url, headers={'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'})
+                with urllib.request.urlopen(req, timeout=6) as resp:
+                    all_kline[code] = json.loads(resp.read().decode('utf-8'))
+        except Exception as se:
+            print(f"[database] Remote Sina fallback notice: {se}")
+
+        if all_kline.get('sh000001'):
+            for code, secid, name, key in symbols:
+                k_list = all_kline.get(code, [])
+                for i, row in enumerate(k_list):
+                    d = row['day']
+                    if d not in date_map:
+                        date_map[d] = {}
+                    c = float(row['close'])
+                    prev_c = float(k_list[i-1]['close']) if i > 0 else float(row['open'])
+                    chg = round((c - prev_c) / prev_c * 100.0, 2)
+                    vol = float(row.get('volume', 0))
+                    date_map[d][code] = {
+                        'name': name,
+                        'close': c,
+                        'open': float(row['open']),
+                        'high': float(row['high']),
+                        'low': float(row['low']),
+                        'change_pct': chg,
+                        'volume': vol,
+                        'amount': 0.0
+                    }
+
+            # Fetch authentic turnover amount from Sohu for SH and SZ (works on cloud servers)
+            import time
+            for sohu_code, target_code in [('zs_000001', 'sh000001'), ('zs_399001', 'sz399001')]:
+                for attempt in range(3):
+                    try:
+                        time.sleep(0.5)
+                        sohu_url = f'http://q.stock.sohu.com/hisHq?code={sohu_code}&start=20260101&end=20261231'
+                        s_req = urllib.request.Request(sohu_url, headers={'User-Agent': 'Mozilla/5.0'})
+                        with urllib.request.urlopen(s_req, timeout=5) as s_resp:
+                            s_data = json.loads(s_resp.read().decode('gbk'))
+                            if s_data and 'hq' in s_data[0]:
+                                for row in s_data[0]['hq']:
+                                    sd = row[0]
+                                    amt_yuan = float(row[8]) * 10000.0  # 万元 to 元
+                                    if sd in date_map and target_code in date_map[sd]:
+                                        date_map[sd][target_code]['amount'] = amt_yuan
+                                break
+                    except Exception as she:
+                        time.sleep(1.0)
+
+            # If latest date still has 0 amount, fill from Sina live quote
+            try:
+                live_url = 'http://hq.sinajs.cn/list=s_sh000001,s_sz399001'
+                l_req = urllib.request.Request(live_url, headers={'User-Agent': 'Mozilla/5.0', 'Referer': 'https://finance.sina.com.cn/'})
+                with urllib.request.urlopen(l_req, timeout=4) as l_resp:
+                    l_text = l_resp.read().decode('gbk', errors='ignore')
+                    import re
+                    sh_m = re.search(r'var hq_str_s_sh000001="([^"]+)";', l_text)
+                    sz_m = re.search(r'var hq_str_s_sz399001="([^"]+)";', l_text)
+                    latest_d = sorted(date_map.keys())[-1] if date_map else None
+                    if latest_d:
+                        if sh_m and 'sh000001' in date_map[latest_d] and date_map[latest_d]['sh000001']['amount'] == 0:
+                            f = sh_m.group(1).split(',')
+                            if len(f) > 5:
+                                date_map[latest_d]['sh000001']['amount'] = float(f[5]) * 10000.0
+                        if sz_m and 'sz399001' in date_map[latest_d] and date_map[latest_d]['sz399001']['amount'] == 0:
+                            f = sz_m.group(1).split(',')
+                            if len(f) > 5:
+                                date_map[latest_d]['sz399001']['amount'] = float(f[5]) * 10000.0
+            except Exception as lve:
+                print(f"[database] Sina live fallback notice: {lve}")
 
     # If real data is retrieved:
-    if all_kline.get('sh000001'):
-        date_map = {}
-        for code, name, key in symbols:
-            k_list = all_kline.get(code, [])
-            for i, row in enumerate(k_list):
-                d = row['day']
-                if d not in date_map:
-                    date_map[d] = {}
-                c = float(row['close'])
-                prev_c = float(k_list[i-1]['close']) if i > 0 else float(row['open'])
-                chg = round((c - prev_c) / prev_c * 100.0, 2)
-                vol = float(row.get('volume', 0))
-                date_map[d][code] = {
-                    'name': name,
-                    'close': c,
-                    'open': float(row['open']),
-                    'high': float(row['high']),
-                    'low': float(row['low']),
-                    'change_pct': chg,
-                    'volume': vol
-                }
-
+    if date_map:
         dates = sorted([d for d in date_map.keys() if 'sh000001' in date_map[d]])
         for d_str in dates:
             sh_data = date_map[d_str]['sh000001']
@@ -159,9 +216,13 @@ def seed_extended_daily_risk_records(cursor, user_id: int = 1, overwrite_distort
             cur_bj = round(bj_data['close'], 2)
             bj_chg = bj_data['change_pct']
 
-            turnover = round((sh_data.get('volume', 0) * cur_sh * 0.0001 + sz_data.get('volume', 0) * cur_sz * 0.0001) / 1e4, 1)
-            if turnover < 600 or turnover > 5000:
-                turnover = round(1650.0 + (cur_sh - 3800.0) * 1.5, 1)
+            # Calculate genuine两市全天成交总额 (亿元) from actual amount data
+            sh_amt = sh_data.get('amount', 0.0)
+            sz_amt = sz_data.get('amount', 0.0)
+            if sh_amt > 0 or sz_amt > 0:
+                turnover = round((sh_amt + sz_amt) / 1e8, 1)
+            else:
+                turnover = None
 
             idx_dict = {
                 'sh000001': {'name': '上证指数', 'current': cur_sh, 'change_pct': sh_chg},
@@ -173,12 +234,15 @@ def seed_extended_daily_risk_records(cursor, user_id: int = 1, overwrite_distort
                 'turnover_billion': turnover
             }
 
-            cursor.execute("SELECT id, pre_market_score, pre_market_level, sh_close, risk_record_id FROM daily_risk_market_records WHERE user_id = ? AND trade_date = ?", (user_id, d_str))
+            cursor.execute("SELECT id, pre_market_score, pre_market_level, sh_close, turnover_billion, risk_record_id FROM daily_risk_market_records WHERE user_id = ? AND trade_date = ?", (user_id, d_str))
             existing = cursor.fetchone()
 
             if existing:
-                # If overwriting or historical data was distorted (< 3500 points)
-                if overwrite_distorted or (existing[3] is not None and existing[3] < 3500):
+                existing_sh = existing[3]
+                existing_turnover = existing[4]
+                # If overwriting, or historical point was distorted (< 3500), or historical turnover was distorted (< 5000 亿 in 3900+ market)
+                is_distorted = (existing_sh is not None and existing_sh < 3500) or (existing_turnover is not None and existing_turnover < 5000)
+                if overwrite_distorted or is_distorted:
                     score = existing[1] if existing[1] is not None else 35
                     # Recalculate validation status based on genuine index change
                     if score >= 60:
@@ -489,14 +553,13 @@ def init_db():
         if col_name not in existing_cols:
             cursor.execute(f"ALTER TABLE daily_risk_market_records ADD COLUMN {col_name} REAL")
 
-    # Seed or calibrate daily risk market records with 100% authentic market points
+    # Seed or calibrate daily risk market records with 100% authentic market points and genuine turnover
     cursor.execute("SELECT COUNT(*) FROM daily_risk_market_records")
     total_records = cursor.fetchone()[0]
-    cursor.execute("SELECT COUNT(*) FROM daily_risk_market_records WHERE sh_close IS NOT NULL AND sh_close < 3500")
+    cursor.execute("SELECT COUNT(*) FROM daily_risk_market_records WHERE (sh_close IS NOT NULL AND sh_close < 3500) OR (turnover_billion IS NOT NULL AND turnover_billion < 5000)")
     distorted_count = cursor.fetchone()[0]
 
     if total_records < 20 or distorted_count > 0:
-        cursor.execute("DELETE FROM daily_risk_market_records WHERE sh_close IS NOT NULL AND sh_close < 3500")
         seed_extended_daily_risk_records(cursor, user_id=1, overwrite_distorted=True)
 
 

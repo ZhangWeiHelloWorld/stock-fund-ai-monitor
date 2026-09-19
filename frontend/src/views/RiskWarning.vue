@@ -1014,7 +1014,13 @@
               <div class="turnover-stat-bar mt-3">
                 <span>💰 两市全天成交总额:</span>
                 <span class="font-mono font-bold text-accent">
-                  {{ selectedDailyRecord.turnover_billion ? selectedDailyRecord.turnover_billion.toFixed(0) + ' 亿元' : '盘中统计中' }}
+                  <template v-if="selectedDailyRecord.turnover_billion">
+                    {{ selectedDailyRecord.turnover_billion.toFixed(0) }} 亿元
+                    <span v-if="selectedDailyRecord.turnover_billion >= 10000" class="turnover-trillion-tag">
+                      (约 {{ (selectedDailyRecord.turnover_billion / 10000).toFixed(2) }} 万亿)
+                    </span>
+                  </template>
+                  <template v-else>盘中统计中</template>
                 </span>
               </div>
             </div>
@@ -3465,6 +3471,13 @@ textarea.form-control {
   align-items: center;
   font-size: 0.88rem;
   line-height: 1.4;
+}
+
+.turnover-trillion-tag {
+  color: #ffd166;
+  font-size: 0.82rem;
+  margin-left: 6px;
+  font-weight: normal;
 }
 
 @media (max-width: 900px) {
