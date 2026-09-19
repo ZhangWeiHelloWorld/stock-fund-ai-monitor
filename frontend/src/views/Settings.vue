@@ -664,6 +664,79 @@
         </div>
       </div>
 
+      <!-- 📊 数据分析与接口配置 -->
+      <div class="glass-card settings-section">
+        <h3 class="section-title">📊 数据分析与数据源配置</h3>
+
+        <div class="form-group">
+          <label>数据源选择 (Data Provider)</label>
+          <div class="radio-group-vertical mt-2" style="display:flex; flex-direction:column; gap:10px;">
+            <label class="radio-label" style="display:flex; align-items:flex-start; gap:10px; cursor:pointer; background:rgba(255,255,255,0.03); padding:10px 14px; border-radius:8px; border:1px solid rgba(255,255,255,0.08);">
+              <input type="radio" value="generic" v-model="settings.data_source_provider" style="margin-top:4px;" />
+              <span>
+                <strong>通用接口 (推荐默认)</strong>
+                <small class="text-secondary" style="display:block; margin-top:2px;">基于新浪行情与公开金融网关，永久免费稳定。提供大盘成交量、全市场主力/机构/散户资金流向、个股行情与板块轮动。</small>
+              </span>
+            </label>
+            <label class="radio-label" style="display:flex; align-items:flex-start; gap:10px; cursor:pointer; background:rgba(255,255,255,0.03); padding:10px 14px; border-radius:8px; border:1px solid rgba(255,255,255,0.08);">
+              <input type="radio" value="mx" v-model="settings.data_source_provider" style="margin-top:4px;" />
+              <span>
+                <strong>东方财富妙想技能 (MX Skills)</strong>
+                <small class="text-secondary" style="display:block; margin-top:2px;">调用东方财富妙想官方大模型金融工具接口。具备时效限制与每日配额限制，过期或失效时系统会自动降级回退至通用接口。</small>
+              </span>
+            </label>
+          </div>
+        </div>
+
+        <div v-if="settings.data_source_provider === 'mx'" class="form-group mt-3">
+          <label>妙想 API Key (MX_APIKEY)</label>
+          <div class="input-group" style="display:flex; gap:8px;">
+            <input 
+              :type="showMxKey ? 'text' : 'password'" 
+              class="form-control" 
+              v-model="settings.mx_api_key" 
+              placeholder="请输入妙想 API Key (如 mkt_-xxxx)" 
+            />
+            <button type="button" class="btn btn-glass" @click="showMxKey = !showMxKey" style="white-space:nowrap;">
+              {{ showMxKey ? '🙈 隐藏' : '👁️ 显示' }}
+            </button>
+          </div>
+          <small class="text-secondary" style="margin-top: 4px; display: block; font-size: 0.78rem;">
+            🔒 <strong>安全保密</strong>：您的私有 Key 仅加密保存在本地 SQLite 数据库，不会保存到代码或公开仓库。
+          </small>
+        </div>
+
+        <div class="form-group mt-3">
+          <label>个股与基金最多展示面板数量</label>
+          <div class="input-group" style="max-width: 260px; display:flex;">
+            <input 
+              type="number" 
+              min="1" 
+              max="30" 
+              class="form-control" 
+              v-model.number="settings.data_analysis_max_panels" 
+              placeholder="默认 6 个" 
+            />
+            <span class="input-suffix" style="padding: 0 12px; display: flex; align-items: center; background: rgba(255,255,255,0.05); border: 1px solid var(--border-glass); border-left: none; border-radius: 0 8px 8px 0; color: var(--text-secondary); font-size:0.85rem;">个面板</span>
+          </div>
+          <small class="text-secondary" style="margin-top: 4px; display: block; font-size: 0.78rem;">
+            💡 股票基金过多时默认呈现的卡片数量（大盘指数固定全部展示），超出部分可通过下拉框手动选择切换。
+          </small>
+        </div>
+
+        <div class="actions-row mt-4">
+          <button class="btn btn-primary" @click="saveSettings">💾 保存数据分析配置</button>
+          <button v-if="settings.data_source_provider === 'mx'" class="btn btn-glass" @click="testMxConnectivity" :disabled="testingMx">
+            <span v-if="testingMx">⏳ 正在校验妙想接口...</span>
+            <span v-else>🧪 测试妙想 API 连通性</span>
+          </button>
+        </div>
+
+        <div v-if="mxTestResult" class="test-result mt-2" :class="mxTestResult.success ? 'success' : 'error'">
+          {{ mxTestResult.message }}
+        </div>
+      </div>
+
       <!-- 📅 投资日历与生辰档案配置 (紧凑流线型卡片) -->
       <div class="glass-card settings-section full-width-card compact-card">
         <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px; flex-wrap:wrap; gap:8px;">
@@ -1082,6 +1155,26 @@ const alertTestResult = ref(null)
 const calendarAiTestResult = ref(null)
 const riskTestResult = ref(null)
 const showPromptEditor = ref(false)
+const showMxKey = ref(false)
+const testingMx = ref(false)
+const mxTestResult = ref(null)
+
+const testMxConnectivity = async () => {
+  testingMx.value = true
+  mxTestResult.value = null
+  try {
+    const res = await api.getDataAnalysisStatus()
+    if (res.provider_type === 'mx') {
+      mxTestResult.value = { success: true, message: `✅ 妙想接口校验成功！当前处于妙想数据源状态。` }
+    } else {
+      mxTestResult.value = { success: false, message: `⚠️ 当前数据源未切换为妙想，请先保存配置后再测试。` }
+    }
+  } catch (e) {
+    mxTestResult.value = { success: false, message: `❌ 接口测试失败: ${e.message}` }
+  } finally {
+    testingMx.value = false
+  }
+}
 
 const citiesData = ref({})
 const calculatingBazi = ref(false)
@@ -1340,7 +1433,10 @@ const settings = ref({
   calendar_show_auspicious: true,
   calendar_show_shensha: true,
   calendar_ai_enabled: true,
-  calendar_ai_prompt_template: DEFAULT_CALENDAR_AI_PROMPT
+  calendar_ai_prompt_template: DEFAULT_CALENDAR_AI_PROMPT,
+  data_source_provider: 'generic',
+  mx_api_key: '',
+  data_analysis_max_panels: 6
 })
 
 const formatDate = (isoStr) => {

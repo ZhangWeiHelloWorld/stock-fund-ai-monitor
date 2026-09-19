@@ -18,6 +18,10 @@
             <span class="icon">📊</span>
             <span class="text">行情看板</span>
           </router-link>
+          <router-link to="/data-analysis" class="nav-item">
+            <span class="icon">📊</span>
+            <span class="text">数据分析</span>
+          </router-link>
           <router-link to="/calendar" class="nav-item">
             <span class="icon">📅</span>
             <span class="text">投资日历</span>

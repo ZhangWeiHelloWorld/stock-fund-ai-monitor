@@ -185,6 +185,16 @@ async def check_and_push():
             today_str = now.strftime("%Y-%m-%d")
             # 1.1 开盘前 09:15 自动记录风险快照
             if now.hour == 9 and now.minute == 15:
+                # Data Analysis auto-refresh at 9:15
+                if globals().get(f'_data_analysis_915_done_{uid}') != today_str:
+                    globals()[f'_data_analysis_915_done_{uid}'] = today_str
+                    try:
+                        from services.data_analysis_service import auto_refresh_all_users
+                        await auto_refresh_all_users()
+                        print(f"[Scheduler] Data analysis auto-refreshed at 09:15")
+                    except Exception as e:
+                        print(f"[Scheduler] Data analysis refresh error: {e}")
+
                 if last_daily_premarket_date.get(uid) != today_str:
                     last_daily_premarket_date[uid] = today_str
                     print(f"[Scheduler] 用户 {uid} 自动触发交易日 09:15 开盘前风险快照记录...")
@@ -245,6 +255,18 @@ async def check_and_push():
                     last_risk_analysis_date[uid] = today_str
                     print(f"[Scheduler] 用户 {uid} 自动触发每日 {cron_time_str} 官媒舆情风控分析与预警...")
                     asyncio.create_task(_trigger_risk_analysis_safe(user_id=uid))
+
+        # Data Analysis auto-refresh at 20:30
+        if now.hour == 20 and now.minute == 30:
+            today_str = now.strftime("%Y-%m-%d")
+            if globals().get(f'_data_analysis_2030_done_{uid}') != today_str:
+                globals()[f'_data_analysis_2030_done_{uid}'] = today_str
+                try:
+                    from services.data_analysis_service import auto_refresh_all_users
+                    await auto_refresh_all_users()
+                    print(f"[Scheduler] Data analysis auto-refreshed at 20:30")
+                except Exception as e:
+                    print(f"[Scheduler] Data analysis refresh error: {e}")
 
         # 4. 检查普通定时行情快报推送
         if not is_trading_time(now):

@@ -544,6 +544,21 @@ def init_db():
             UNIQUE(user_id, trade_date)
         )
     ''')
+
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS data_analysis_cache (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER NOT NULL,
+            cache_key TEXT NOT NULL,
+            data TEXT NOT NULL,
+            market_status TEXT,
+            provider_type TEXT,
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL,
+            UNIQUE(user_id, cache_key)
+        )
+    ''')
+
     cursor.execute("CREATE INDEX IF NOT EXISTS idx_daily_risk_date ON daily_risk_market_records (user_id, trade_date)")
 
     # Auto-migrate daily_risk_market_records columns if missing
@@ -663,6 +678,9 @@ def init_db():
         'wxwork_agentsecret': '',
         'wxwork_agentid': '1000002',
         'wxwork_touser': '@all',
+        'data_source_provider': 'generic',
+        'mx_api_key': '',
+        'data_analysis_max_panels': '6',
         'push_enabled': 'true',
         'push_schedule': '30min',
         'push_at_open': 'true',
@@ -816,6 +834,9 @@ def init_user_default_settings(user_id: int):
         'wxwork_agentsecret': '',
         'wxwork_agentid': '1000002',
         'wxwork_touser': '@all',
+        'data_source_provider': 'generic',
+        'mx_api_key': '',
+        'data_analysis_max_panels': '6',
         'push_enabled': 'false',
         'push_schedule': '30min',
         'push_at_open': 'true',

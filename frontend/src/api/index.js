@@ -60,6 +60,16 @@ export default {
   getMarketIndices: () => api.get('/market/indices').then(res => res.data),
   getMarketHistory: (days) => api.get(`/market/history?days=${days}`).then(res => res.data),
 
+  // Data Analysis
+  getDataAnalysisOverview: () => api.get('/data-analysis/overview').then(res => res.data),
+  getDataAnalysisStock: (code, isFund = false) => api.get(`/data-analysis/stock/${code}?is_fund=${isFund}`).then(res => res.data),
+  getDataAnalysisSectorRotation: () => api.get('/data-analysis/sector-rotation').then(res => res.data),
+  getDataAnalysisSectorFlow: () => api.get('/data-analysis/sector-flow').then(res => res.data),
+  getDataAnalysisHoldings: () => api.get('/data-analysis/holdings').then(res => res.data),
+  getHoldingsAnalysis: (items) => api.post('/data-analysis/holdings-analysis', items).then(res => res.data),
+  refreshDataAnalysis: () => api.post('/data-analysis/refresh').then(res => res.data),
+  getDataAnalysisStatus: () => api.get('/data-analysis/status').then(res => res.data),
+
   // Settings
   getSettings: () => api.get('/settings').then(res => res.data),
   updateSettings: (data) => api.put('/settings', data).then(res => res.data),

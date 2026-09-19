@@ -1022,7 +1022,7 @@ async def get_daily_risk_market_records(
                 await record_daily_market_close(trade_date=today_str, user_id=user_id)
         except Exception as e:
             print(f"[OM-STW] Failed to auto-init today premarket record: {e}")
-    elif (today_row["sh_close"] is None or today_row["sh_close"] == 0) and now.hour >= 15:
+    elif today_row and (today_row["sh_close"] is None or today_row["sh_close"] == 0) and now.hour >= 15:
         # Today's close points are missing, auto sync
         try:
             await record_daily_market_close(trade_date=today_str, user_id=user_id)

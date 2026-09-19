@@ -9,11 +9,13 @@ import Strategies from './views/Strategies.vue'
 import RiskWarning from './views/RiskWarning.vue'
 import Settings from './views/Settings.vue'
 import Login from './views/Login.vue'
+import DataAnalysis from './views/DataAnalysis.vue'
 import './style.css'
 
 const routes = [
   { path: '/login', component: Login, name: 'Login' },
   { path: '/', component: Dashboard, name: 'Dashboard' },
+  { path: '/data-analysis', component: DataAnalysis, name: 'DataAnalysis' },
   { path: '/calendar', component: Calendar, name: 'Calendar' },
   { path: '/stocks', component: Stocks, name: 'Stocks' },
   { path: '/funds', component: Funds, name: 'Funds' },

@@ -126,6 +126,9 @@ class SettingsUpdate(BaseModel):
     risk_default_model_id: Optional[str] = None
     risk_notify_wx: Optional[bool] = None
     risk_alert_threshold: Optional[int] = None
+    data_source_provider: Optional[str] = None
+    mx_api_key: Optional[str] = None
+    data_analysis_max_panels: Optional[int] = None
 
 class CalculateBaziRequest(BaseModel):
     birth_date: str # YYYY-MM-DD
