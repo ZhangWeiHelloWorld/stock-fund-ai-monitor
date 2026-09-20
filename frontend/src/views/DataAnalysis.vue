@@ -253,18 +253,18 @@
             <span>依据前 {{ item.components_count || 10 }} 大重仓成分股加权穿透测算</span>
           </div>
 
-          <!-- 资金流向三维条 (机构 / 主力 / 散户) -->
+          <!-- 资金流向三维条 (主力 / 机构 / 散户) -->
           <div class="holding-flow-list">
-            <div class="flow-row">
-              <span class="flow-name">机构净流入</span>
-              <span class="flow-val" :class="getFlowClass(item.institution_net_inflow)">
-                {{ item.institution_net_inflow_formatted }}
-              </span>
-            </div>
             <div class="flow-row">
               <span class="flow-name">主力净流入</span>
               <span class="flow-val" :class="getFlowClass(item.main_net_inflow)">
                 {{ item.main_net_inflow_formatted }}
+              </span>
+            </div>
+            <div class="flow-row">
+              <span class="flow-name">机构净流入</span>
+              <span class="flow-val" :class="getFlowClass(item.institution_net_inflow)">
+                {{ item.institution_net_inflow_formatted }}
               </span>
             </div>
             <div class="flow-row">

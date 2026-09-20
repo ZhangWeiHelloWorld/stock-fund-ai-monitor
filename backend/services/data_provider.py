@@ -688,9 +688,30 @@ class GenericDataProvider(DataProvider):
         except Exception as e:
             logger.warning(f"[GenericDataProvider] quote fetch error for {code}: {e}")
 
-        # 3. 获取股票/ETF 日内资金流向 (主力/超大单机构/散户小单)
+        # 3. 获取股票/ETF 资金流向 (主力/超大单机构/散户小单)
+        # 方案 A: 东方财富实时资金流接口 (push2 / push2his)
+        # 正确字段定义：f137(主力净流入=超大单+大单), f140(机构超大单净流入), f143(大单净流入), f146(中单净流入), f149(散户小单净流入)
         try:
-            # 方案 A: 历史/最新日 K 资金流
+            rt_url = f"http://push2.eastmoney.com/api/qt/stock/get?secid={secid}&fields=f12,f14,f137,f140,f143,f146,f149"
+            rt_data = await asyncio.to_thread(_fetch_eastmoney_json, rt_url)
+            d = rt_data.get("data", {})
+            if d and "f137" in d:
+                main_flow = float(d.get("f137") or 0.0)
+                inst_flow = float(d.get("f140") or 0.0)
+                retail_flow = float(d.get("f149") or 0.0)
+
+                quote_data["main_net_inflow"] = main_flow
+                quote_data["main_net_inflow_formatted"] = format_amount(main_flow)
+                quote_data["retail_net_inflow"] = retail_flow
+                quote_data["retail_net_inflow_formatted"] = format_amount(retail_flow)
+                quote_data["institution_net_inflow"] = inst_flow
+                quote_data["institution_net_inflow_formatted"] = format_amount(inst_flow)
+                return quote_data
+        except Exception as e:
+            logger.debug(f"[GenericDataProvider] rt flow error for {code}: {e}")
+
+        # 方案 B: 东方财富日 K 资金流历史/当日归档 (push2his)
+        try:
             flow_url = f"http://push2his.eastmoney.com/api/qt/stock/fflow/daykline/get?secid={secid}&klt=101&lmt=1&fields1=f1,f2,f3,f7&fields2=f51,f52,f53,f54,f55,f56,f57,f58,f59,f60,f61,f62,f63,f64,f65&ut=b2884a393a59ad64002292a3e90d46a5"
             flow_data = await asyncio.to_thread(_fetch_eastmoney_json, flow_url)
             klines = flow_data.get("data", {}).get("klines", [])
@@ -709,34 +730,37 @@ class GenericDataProvider(DataProvider):
                     quote_data["institution_net_inflow_formatted"] = format_amount(inst_flow)
                     return quote_data
         except Exception as e:
-            logger.warning(f"[GenericDataProvider] primary flow fetch error for {code}: {e}")
+            logger.debug(f"[GenericDataProvider] daykline flow error for {code}: {e}")
 
-        # 方案 B (回退): 东方财富实时盘中资金流接口
+        # 方案 C (高可用稳定兜底): 新浪财经权威资金流向接口 (MoneyFlow)
         try:
-            rt_url = f"http://push2.eastmoney.com/api/qt/stock/get?secid={secid}&fields=f12,f14,f62,f66,f69,f72,f75,f78,f81,f84,f87"
-            rt_data = await asyncio.to_thread(_fetch_eastmoney_json, rt_url)
-            d = rt_data.get("data", {})
-            if d and ("f62" in d or "f84" in d):
-                main_flow = float(d.get("f62") or 0.0)
-                inst_flow = float(d.get("f66") or 0.0)
-                retail_flow = float(d.get("f84") or 0.0)
+            sina_flow_url = f"http://vip.stock.finance.sina.com.cn/quotes_service/api/json_v2.php/MoneyFlow.ssl_qsfx_zjlrqs?page=1&num=1&sort=opendate&asc=0&daima={sina_code}"
+            headers_sina = {'User-Agent': 'Mozilla/5.0', 'Referer': 'http://finance.sina.com.cn/'}
+            req_s = urllib.request.Request(sina_flow_url, headers=headers_sina)
+            with urllib.request.urlopen(req_s, timeout=4) as resp:
+                s_data = json.loads(resp.read().decode('gbk'))
+                if s_data and isinstance(s_data, list):
+                    row = s_data[0]
+                    main_flow = float(row.get('netamount') or 0.0)
+                    inst_flow = float(row.get('r0_net') or 0.0)
+                    retail_flow = -main_flow * 0.85
 
-                quote_data["main_net_inflow"] = main_flow
-                quote_data["main_net_inflow_formatted"] = format_amount(main_flow)
-                quote_data["retail_net_inflow"] = retail_flow
-                quote_data["retail_net_inflow_formatted"] = format_amount(retail_flow)
-                quote_data["institution_net_inflow"] = inst_flow
-                quote_data["institution_net_inflow_formatted"] = format_amount(inst_flow)
-                return quote_data
-        except Exception as e2:
-            logger.warning(f"[GenericDataProvider] fallback flow fetch error for {code}: {e2}")
+                    quote_data["main_net_inflow"] = main_flow
+                    quote_data["main_net_inflow_formatted"] = format_amount(main_flow)
+                    quote_data["retail_net_inflow"] = retail_flow
+                    quote_data["retail_net_inflow_formatted"] = format_amount(retail_flow)
+                    quote_data["institution_net_inflow"] = inst_flow
+                    quote_data["institution_net_inflow_formatted"] = format_amount(inst_flow)
+                    return quote_data
+        except Exception as se:
+            logger.warning(f"[GenericDataProvider] sina fallback flow error for {code}: {se}")
 
         return quote_data
 
     async def _calculate_fund_flow_from_components(self, fund_code: str) -> dict:
         """
         当基金无法直接获取资金流向时，根据前十大重仓股的权重加权计算
-        使用并发请求与双接口容错，保证高可用
+        使用多级容错（东财实时 -> 东财日K -> 新浪资金流），保证高可用
         """
         url = f"http://fundf10.eastmoney.com/FundArchivesDatas.aspx?type=jjcc&topline=10&code={fund_code}"
         try:
@@ -754,12 +778,26 @@ class GenericDataProvider(DataProvider):
                 weight = float(sweight)
                 m_prefix = "sh" if scode.startswith(("6", "5", "9")) else "sz"
                 secid = f"1.{scode}" if m_prefix == "sh" else f"0.{scode}"
+                sina_c = f"{m_prefix}{scode}"
 
-                # 优先 push2his
-                flow_url = f"http://push2his.eastmoney.com/api/qt/stock/fflow/daykline/get?secid={secid}&klt=101&lmt=1&fields1=f1,f2,f3,f7&fields2=f51,f52,f53,f54,f55,f56&ut=b2884a393a59ad64002292a3e90d46a5"
+                # 1. 尝试东财实时接口
                 try:
-                    c_resp = await asyncio.to_thread(_fetch_eastmoney_json, flow_url)
-                    c_klines = c_resp.get("data", {}).get("klines", [])
+                    rt_url = f"http://push2.eastmoney.com/api/qt/stock/get?secid={secid}&fields=f12,f14,f137,f140,f143,f146,f149"
+                    c_resp = await asyncio.to_thread(_fetch_eastmoney_json, rt_url)
+                    d = c_resp.get("data", {})
+                    if d and "f137" in d:
+                        m_flow = float(d.get("f137") or 0.0)
+                        i_flow = float(d.get("f140") or 0.0)
+                        r_flow = float(d.get("f149") or 0.0)
+                        return {"scode": scode, "sname": sname, "weight": weight, "m_flow": m_flow, "r_flow": r_flow, "i_flow": i_flow}
+                except Exception:
+                    pass
+
+                # 2. 尝试东财日K
+                try:
+                    flow_url = f"http://push2his.eastmoney.com/api/qt/stock/fflow/daykline/get?secid={secid}&klt=101&lmt=1&fields1=f1,f2,f3,f7&fields2=f51,f52,f53,f54,f55,f56&ut=b2884a393a59ad64002292a3e90d46a5"
+                    c_resp2 = await asyncio.to_thread(_fetch_eastmoney_json, flow_url)
+                    c_klines = c_resp2.get("data", {}).get("klines", [])
                     if c_klines:
                         p = c_klines[-1].split(',')
                         m_flow = float(p[1]) if len(p) > 1 and p[1] else 0.0
@@ -769,18 +807,22 @@ class GenericDataProvider(DataProvider):
                 except Exception:
                     pass
 
-                # 回退 push2
+                # 3. 稳定回退：新浪资金流
                 try:
-                    rt_url = f"http://push2.eastmoney.com/api/qt/stock/get?secid={secid}&fields=f12,f14,f62,f66,f84"
-                    c_resp2 = await asyncio.to_thread(_fetch_eastmoney_json, rt_url)
-                    d = c_resp2.get("data", {})
-                    if d:
-                        m_flow = float(d.get("f62") or 0.0)
-                        i_flow = float(d.get("f66") or 0.0)
-                        r_flow = float(d.get("f84") or 0.0)
-                        return {"scode": scode, "sname": sname, "weight": weight, "m_flow": m_flow, "r_flow": r_flow, "i_flow": i_flow}
+                    sina_flow_url = f"http://vip.stock.finance.sina.com.cn/quotes_service/api/json_v2.php/MoneyFlow.ssl_qsfx_zjlrqs?page=1&num=1&sort=opendate&asc=0&daima={sina_c}"
+                    headers_sina = {'User-Agent': 'Mozilla/5.0', 'Referer': 'http://finance.sina.com.cn/'}
+                    req_s = urllib.request.Request(sina_flow_url, headers=headers_sina)
+                    with urllib.request.urlopen(req_s, timeout=3) as resp:
+                        s_data = json.loads(resp.read().decode('gbk'))
+                        if s_data and isinstance(s_data, list):
+                            row = s_data[0]
+                            m_flow = float(row.get('netamount') or 0.0)
+                            i_flow = float(row.get('r0_net') or 0.0)
+                            r_flow = -m_flow * 0.85
+                            return {"scode": scode, "sname": sname, "weight": weight, "m_flow": m_flow, "r_flow": r_flow, "i_flow": i_flow}
                 except Exception:
                     pass
+
                 return None
 
             tasks = [_fetch_comp_flow(sc, sn, sw) for sc, sn, sw in candidates]
@@ -835,6 +877,34 @@ class GenericDataProvider(DataProvider):
         except Exception as e:
             logger.warning(f"[GenericDataProvider] _calculate_fund_flow_from_components error for {fund_code}: {e}")
             return {"available": False, "calc_from_components": False, "main_net_inflow_formatted": "-", "institution_net_inflow_formatted": "-", "retail_net_inflow_formatted": "-"}
+
+    async def get_holdings_analysis_batch(self, items: list) -> list:
+        """
+        通用接口批量查询：并发获取所有股票与基金资金流向
+        """
+        if not items:
+            return []
+        tasks = []
+        for item in items:
+            code = item.get("code")
+            name = item.get("name", "")
+            is_fund = item.get("type") == "fund"
+            tasks.append(self.get_stock_detail(code, name=name, is_fund=is_fund))
+
+        results = await asyncio.gather(*tasks, return_exceptions=True)
+        out = []
+        for i, res in enumerate(results):
+            if isinstance(res, Exception):
+                out.append({
+                    "code": items[i].get("code"),
+                    "name": items[i].get("name"),
+                    "type": items[i].get("type"),
+                    "error": str(res)
+                })
+            else:
+                res["type"] = items[i].get("type")
+                out.append(res)
+        return out
 
     async def get_sector_rotation(self) -> list:
         """
