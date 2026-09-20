@@ -17,12 +17,19 @@ def get_provider_for_user(user_id: int):
     """
     Get configured DataProvider for the user.
     Reads user settings: data_source_provider ('mx' or 'generic') and mx_api_key.
-    Falls back to GenericDataProvider if MX is selected but unavailable.
+    Only uses MX when user explicitly selected 'mx'.
+    Falls back to GenericDataProvider if MX is selected but key is missing.
     """
+    import os
     settings = get_settings_dict(user_id=user_id)
     provider_type = settings.get('data_source_provider', 'generic')
+    if not provider_type or provider_type not in ('mx', 'generic'):
+        provider_type = 'generic'
+
     mx_api_key = settings.get('mx_api_key', '').strip()
-    
+    if not mx_api_key:
+        mx_api_key = os.environ.get('MX_APIKEY', '').strip()
+
     is_degraded = False
     provider = None
 
@@ -34,8 +41,23 @@ def get_provider_for_user(user_id: int):
             is_degraded = True
     else:
         provider = GenericDataProvider()
+        provider_type = 'generic'
 
     return provider, provider_type, is_degraded
+
+
+def clear_user_analysis_cache(user_id: int):
+    """Clear memory and DB cache for a user when settings change"""
+    if user_id in _analysis_cache:
+        del _analysis_cache[user_id]
+    try:
+        with sqlite3.connect(DB_PATH) as conn:
+            cursor = conn.cursor()
+            cursor.execute("DELETE FROM data_analysis_cache WHERE user_id = ?", (user_id,))
+            conn.commit()
+            logger.info(f"[DataAnalysisService] Successfully cleared analysis cache for user {user_id}")
+    except Exception as e:
+        logger.warning(f"[DataAnalysisService] clear cache DB error: {e}")
 
 
 def _get_user_cache(user_id: int):
@@ -44,6 +66,7 @@ def _get_user_cache(user_id: int):
             'overview': {'data': None, 'updated_at': None},
             'sector_rotation': {'data': None, 'updated_at': None},
             'sector_flow': {'data': None, 'updated_at': None},
+            'holdings_analysis': {'data': None, 'updated_at': None, 'item_keys': ''},
             'stock_detail': {},
         }
         # Try loading initial cache from SQLite DB if exists
@@ -142,14 +165,17 @@ async def get_analysis_overview(user_id: int, force_refresh: bool = False):
     cached = user_cache['overview']
 
     market_status, data_label = _determine_status_and_label()
+    provider, provider_type, is_degraded = get_provider_for_user(user_id)
 
     if not force_refresh and cached['data'] and _is_cache_valid(cached['updated_at']):
-        data = cached['data']
-        data['market_status'] = market_status
-        data['data_label'] = data_label
-        return data
-
-    provider, provider_type, is_degraded = get_provider_for_user(user_id)
+        # 必须校验缓存中的数据源类型与当前配置一致，否则立即强制刷新
+        if cached['data'].get('provider_type') == provider_type:
+            data = cached['data']
+            data['market_status'] = market_status
+            data['data_label'] = data_label
+            data['provider_type'] = provider_type
+            data['is_degraded'] = is_degraded
+            return data
 
     indices_res = await provider.get_market_indices_volume()
     flow_res = await provider.get_fund_flow_summary()
@@ -249,32 +275,56 @@ async def get_stock_analysis(user_id: int, code: str, name: str = "", is_fund: b
     return await provider.get_stock_detail(code, name=name, is_fund=is_fund)
 
 
-async def get_holdings_analysis_data(user_id: int, items: list):
+async def get_holdings_analysis_data(user_id: int, items: list, force_refresh: bool = False):
     """
     Batch analyze multiple stocks and funds.
     items: list of {"code": str, "name": str, "type": "stock"|"fund"}
     """
-    provider, _, _ = get_provider_for_user(user_id)
-    tasks = []
-    for item in items:
-        code = item.get("code")
-        name = item.get("name", "")
-        is_fund = item.get("type") == "fund"
-        tasks.append(provider.get_stock_detail(code, name=name, is_fund=is_fund))
+    if not items:
+        return []
 
-    results = await asyncio.gather(*tasks, return_exceptions=True)
-    out = []
-    for i, res in enumerate(results):
-        if isinstance(res, Exception):
-            out.append({
-                "code": items[i].get("code"),
-                "name": items[i].get("name"),
-                "type": items[i].get("type"),
-                "error": str(res)
-            })
-        else:
-            res["type"] = items[i].get("type")
-            out.append(res)
+    item_keys = ",".join(sorted(f"{it.get('code')}_{it.get('type')}" for it in items))
+    user_cache = _get_user_cache(user_id)
+    cached = user_cache.get('holdings_analysis', {})
+
+    if not force_refresh and cached.get('data') and cached.get('item_keys') == item_keys and _is_cache_valid(cached.get('updated_at')):
+        return cached['data']
+
+    provider, _, _ = get_provider_for_user(user_id)
+    if hasattr(provider, "get_holdings_analysis_batch"):
+        try:
+            out = await provider.get_holdings_analysis_batch(items)
+        except Exception as be:
+            logger.warning(f"[DataAnalysisService] get_holdings_analysis_batch error: {be}")
+            out = []
+    else:
+        tasks = []
+        for item in items:
+            code = item.get("code")
+            name = item.get("name", "")
+            is_fund = item.get("type") == "fund"
+            tasks.append(provider.get_stock_detail(code, name=name, is_fund=is_fund))
+
+        results = await asyncio.gather(*tasks, return_exceptions=True)
+        out = []
+        for i, res in enumerate(results):
+            if isinstance(res, Exception):
+                out.append({
+                    "code": items[i].get("code"),
+                    "name": items[i].get("name"),
+                    "type": items[i].get("type"),
+                    "error": str(res)
+                })
+            else:
+                res["type"] = items[i].get("type")
+                out.append(res)
+
+    now = datetime.now()
+    user_cache['holdings_analysis'] = {
+        'data': out,
+        'updated_at': now,
+        'item_keys': item_keys
+    }
     return out
 
 
@@ -285,6 +335,7 @@ async def refresh_analysis_data(user_id: int):
             _analysis_cache[user_id]['overview'] = {'data': None, 'updated_at': None}
             _analysis_cache[user_id]['sector_rotation'] = {'data': None, 'updated_at': None}
             _analysis_cache[user_id]['sector_flow'] = {'data': None, 'updated_at': None}
+            _analysis_cache[user_id]['holdings_analysis'] = {'data': None, 'updated_at': None, 'item_keys': ''}
             _analysis_cache[user_id]['stock_detail'] = {}
 
         await get_analysis_overview(user_id, force_refresh=True)

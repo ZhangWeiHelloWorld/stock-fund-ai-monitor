@@ -11,22 +11,30 @@ from services.trading_calendar import is_trading_time, is_trading_day
 
 logger = logging.getLogger(__name__)
 
-def _fetch_eastmoney_json(url: str, referer: str = "https://data.eastmoney.com/") -> dict:
-    url = url.replace("http://push2.eastmoney.com", "https://push2his.eastmoney.com")
-    url = url.replace("https://push2.eastmoney.com", "https://push2his.eastmoney.com")
+def _fetch_eastmoney_json(url: str, referer: str = "http://data.eastmoney.com/") -> dict:
     headers = {
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
         'Referer': referer
     }
-    for attempt in range(3):
-        try:
-            req = urllib.request.Request(url, headers=headers)
-            with urllib.request.urlopen(req, timeout=8) as resp:
-                return json.loads(resp.read().decode('utf-8'))
-        except Exception as e:
-            if attempt == 2:
-                raise e
-            time.sleep(0.2)
+    # 针对东财接口，https 连接在部分网络环境下可能被直接断开 (Remote end closed connection)，支持自动切换协议
+    candidates = [url]
+    if url.startswith("https://push2"):
+        candidates.append(url.replace("https://", "http://", 1))
+    elif url.startswith("http://push2"):
+        candidates.append(url.replace("http://", "https://", 1))
+
+    last_err = None
+    for cand_url in candidates:
+        for attempt in range(2):
+            try:
+                req = urllib.request.Request(cand_url, headers=headers)
+                with urllib.request.urlopen(req, timeout=6) as resp:
+                    return json.loads(resp.read().decode('utf-8'))
+            except Exception as e:
+                last_err = e
+                time.sleep(0.15)
+    if last_err:
+        raise last_err
 
 def _fetch_eastmoney_text(url: str, referer: str = "http://fund.eastmoney.com/") -> str:
     req = urllib.request.Request(url, headers={'User-Agent': 'Mozilla/5.0', 'Referer': referer})
@@ -242,11 +250,228 @@ class MXDataProvider(DataProvider):
         data["source"] = "mx"
         return data
 
+    def _parse_mx_val(self, val_any) -> float:
+        if val_any is None or val_any in ('-', '', 'null'):
+            return 0.0
+        if isinstance(val_any, list):
+            if not val_any:
+                return 0.0
+            val_any = val_any[0]
+        try:
+            return float(val_any)
+        except (ValueError, TypeError):
+            s = str(val_any)
+            try:
+                if '万' in s:
+                    return float(s.replace('万', '').replace('元', '')) * 10000.0
+                elif '亿' in s:
+                    return float(s.replace('亿', '').replace('元', '')) * 100000000.0
+            except Exception:
+                return 0.0
+        return 0.0
+
+    async def _calculate_fund_flow_via_mx(self, fund_code: str, fund_name: str) -> dict:
+        """通过妙想技能自然语言查询基金前十大重仓股及资金流向"""
+        f_query = f"{fund_name or fund_code}({fund_code})最新前十大重仓股名称"
+        try:
+            res = await self._query(f_query)
+            dtos = res.get("dto_list", []) if res.get("available") else []
+            comps = []
+            for dto in dtos:
+                table = dto.get("table", {})
+                for k, vals in table.items():
+                    if k != 'headName' and vals and isinstance(vals[0], str) and ',' in vals[0]:
+                        comps = [c.strip() for c in vals[0].split(',') if c.strip()][:10]
+                        break
+                if comps:
+                    break
+
+            if not comps:
+                return {"available": False, "calc_from_components": False, "main_net_inflow_formatted": "-", "institution_net_inflow_formatted": "-", "retail_net_inflow_formatted": "-"}
+
+            # 批量查询重仓股的最新资金流向
+            c_query = ' '.join(comps[:8]) + ' 今日主力资金流向 机构资金 散户资金'
+            c_res = await self._query(c_query)
+            c_dtos = c_res.get("dto_list", []) if c_res.get("available") else []
+            
+            for cd in c_dtos:
+                ctable = cd.get("table", {})
+                cmap = cd.get("nameMap", {})
+                chead = ctable.get("headName", [])
+                cm_k, ci_k, cr_k = None, None, None
+                for ck, cv in cmap.items():
+                    if "主力净流入" in cv: cm_k = ck
+                    elif "超大单净流入" in cv: ci_k = ck
+                    elif "小单净流入" in cv: cr_k = ck
+
+                if cm_k and cm_k in ctable:
+                    tot_m, tot_i, tot_r = 0.0, 0.0, 0.0
+                    top_components = []
+                    for cname in comps[:8]:
+                        cidx = -1
+                        for idx, h in enumerate(chead):
+                            if cname in h:
+                                cidx = idx
+                                break
+                        if cidx != -1:
+                            m_val = self._parse_mx_val(ctable[cm_k][cidx])
+                            i_val = self._parse_mx_val(ctable[ci_k][cidx]) if ci_k and ci_k in ctable else 0.0
+                            r_val = self._parse_mx_val(ctable[cr_k][cidx]) if cr_k and cr_k in ctable else 0.0
+                            tot_m += m_val
+                            tot_i += i_val
+                            tot_r += r_val
+                            top_components.append({
+                                "code": "",
+                                "name": cname,
+                                "weight": 10.0,
+                                "main_net_inflow_formatted": format_amount(m_val),
+                                "institution_net_inflow_formatted": format_amount(i_val),
+                                "retail_net_inflow_formatted": format_amount(r_val)
+                            })
+                    if top_components:
+                        avg_m = tot_m / len(top_components)
+                        avg_i = tot_i / len(top_components)
+                        avg_r = tot_r / len(top_components)
+                        return {
+                            "available": True,
+                            "calc_from_components": True,
+                            "components_count": len(top_components),
+                            "components": top_components,
+                            "main_net_inflow": avg_m,
+                            "main_net_inflow_formatted": format_amount(avg_m),
+                            "retail_net_inflow": avg_r,
+                            "retail_net_inflow_formatted": format_amount(avg_r),
+                            "institution_net_inflow": avg_i,
+                            "institution_net_inflow_formatted": format_amount(avg_i)
+                        }
+        except Exception as e:
+            logger.warning(f"[MXDataProvider] fund flow via MX error for {fund_code}: {e}")
+        return {"available": False, "calc_from_components": False, "main_net_inflow_formatted": "-", "institution_net_inflow_formatted": "-", "retail_net_inflow_formatted": "-"}
+
     async def get_stock_detail(self, code: str, name: str = "", is_fund: bool = False) -> dict:
+        """
+        通过妙想技能 API (自然语言查询) 提取个股/基金资金流向数据
+        """
+        clean_code = re.sub(r'^[a-zA-Z]+', '', code.strip())
         generic = GenericDataProvider()
-        res = await generic.get_stock_detail(code, name=name, is_fund=is_fund)
-        res["source"] = "mx"
-        return res
+        base_detail = await generic.get_stock_detail(code, name=name, is_fund=is_fund)
+        base_detail["source"] = "mx"
+
+        # 如果是场外基金，利用妙想技能进行权威重仓股自然语言穿透测算
+        if is_fund and not clean_code.startswith(("159", "510", "511", "512", "513", "515", "516", "517", "518", "560", "561", "562", "563", "588", "16")):
+            mx_fund_res = await self._calculate_fund_flow_via_mx(clean_code, name or base_detail.get("name", ""))
+            if mx_fund_res.get("available"):
+                base_detail.update(mx_fund_res)
+            return base_detail
+
+        # 查询妙想自然语言资金流向
+        stock_name = name or base_detail.get("name") or clean_code
+        query_text = f"{stock_name}({clean_code})今日主力资金流向 机构资金 散户资金"
+        try:
+            mx_res = await self._query(query_text)
+            if mx_res.get("available") and mx_res.get("dto_list"):
+                for dto in mx_res["dto_list"]:
+                    name_map = dto.get("nameMap", {})
+                    table = dto.get("table", {})
+                    if not table:
+                        continue
+
+                    main_key = None
+                    inst_key = None
+                    retail_key = None
+                    for k, v in name_map.items():
+                        if "主力净流入" in v:
+                            main_key = k
+                        elif "超大单净流入" in v:
+                            inst_key = k
+                        elif "小单净流入" in v:
+                            retail_key = k
+
+                    if main_key and main_key in table:
+                        val_list = table.get(main_key, [])
+                        main_val = self._parse_mx_val(val_list)
+                        inst_val = self._parse_mx_val(table.get(inst_key)) if inst_key else 0.0
+                        retail_val = self._parse_mx_val(table.get(retail_key)) if retail_key else 0.0
+
+                        base_detail["main_net_inflow"] = main_val
+                        base_detail["main_net_inflow_formatted"] = format_amount(main_val)
+                        base_detail["institution_net_inflow"] = inst_val
+                        base_detail["institution_net_inflow_formatted"] = format_amount(inst_val)
+                        base_detail["retail_net_inflow"] = retail_val
+                        base_detail["retail_net_inflow_formatted"] = format_amount(retail_val)
+                        return base_detail
+        except Exception as e:
+            logger.warning(f"[MXDataProvider] get_stock_detail error for {clean_code}: {e}")
+
+        return base_detail
+
+    async def get_holdings_analysis_batch(self, items: list) -> list:
+        """
+        妙想技能专享：一次批量自然语言查询，合并所有股票资金流向，极速准确
+        """
+        if not items:
+            return []
+
+        stock_items = [it for it in items if it.get("type") != "fund"]
+        fund_items = [it for it in items if it.get("type") == "fund"]
+
+        results_map = {}
+
+        # 1. 股票合并成一次自然语言查询
+        if stock_items:
+            combined_query = ' '.join(f"{it.get('name', '')}({re.sub(r'^[a-zA-Z]+', '', it.get('code', ''))})" for it in stock_items) + " 今日主力资金流向 机构资金 散户资金"
+            try:
+                mx_res = await self._query(combined_query)
+                dto_list = mx_res.get("dto_list", []) if mx_res.get("available") else []
+                for dto in dto_list:
+                    table = dto.get("table", {})
+                    name_map = dto.get("nameMap", {})
+                    head_names = table.get("headName", [])
+
+                    main_k, inst_k, retail_k = None, None, None
+                    for k, v in name_map.items():
+                        if "主力净流入" in v: main_k = k
+                        elif "超大单净流入" in v: inst_k = k
+                        elif "小单净流入" in v: retail_k = k
+
+                    if main_k and main_k in table:
+                        for it in stock_items:
+                            c_code = re.sub(r'^[a-zA-Z]+', '', it.get('code', ''))
+                            c_name = it.get('name', '')
+                            target_idx = -1
+                            for idx, h in enumerate(head_names):
+                                if c_code in h or (c_name and c_name in h):
+                                    target_idx = idx
+                                    break
+                            if target_idx != -1:
+                                m_val = self._parse_mx_val(table[main_k][target_idx])
+                                i_val = self._parse_mx_val(table[inst_k][target_idx]) if inst_k and inst_k in table else 0.0
+                                r_val = self._parse_mx_val(table[retail_k][target_idx]) if retail_k and retail_k in table else 0.0
+                                results_map[it.get("code")] = {
+                                    "main_net_inflow": m_val,
+                                    "main_net_inflow_formatted": format_amount(m_val),
+                                    "institution_net_inflow": i_val,
+                                    "institution_net_inflow_formatted": format_amount(i_val),
+                                    "retail_net_inflow": r_val,
+                                    "retail_net_inflow_formatted": format_amount(r_val),
+                                }
+                        break
+            except Exception as e:
+                logger.warning(f"[MXDataProvider] batch query error: {e}")
+
+        # 2. 为每个标的生成完整的返回详情
+        out = []
+        for it in items:
+            code = it.get("code")
+            name = it.get("name", "")
+            is_fund = it.get("type") == "fund"
+            detail = await self.get_stock_detail(code, name=name, is_fund=is_fund)
+            if code in results_map:
+                detail.update(results_map[code])
+            detail["type"] = it.get("type")
+            out.append(detail)
+
+        return out
 
     async def get_sector_rotation(self) -> list:
         generic = GenericDataProvider()
@@ -317,7 +542,7 @@ class GenericDataProvider(DataProvider):
         """
         获取全市场 散户、主力、机构的 净成交量 / 净流入金额 (上证 + 深证汇总)
         """
-        url = "http://push2.eastmoney.com/api/qt/ulist.np/get?fltt=2&secids=1.000001,0.399001&fields=f1,f2,f3,f4,f12,f13,f14,f62,f66,f69,f72,f75,f78,f81,f84,f87"
+        url = "http://push2.eastmoney.com/api/qt/ulist.np/get?fltt=2&secids=1.000001,0.399001&fields=f1,f2,f3,f4,f12,f13,f14,f62,f66,f69,f72,f75,f78,f81,f84,f87&ut=b2884a393a59ad64002292a3e90d46a5"
         try:
             data = await asyncio.to_thread(_fetch_eastmoney_json, url)
             diff = data.get("data", {}).get("diff", [])
@@ -465,7 +690,8 @@ class GenericDataProvider(DataProvider):
 
         # 3. 获取股票/ETF 日内资金流向 (主力/超大单机构/散户小单)
         try:
-            flow_url = f"http://push2.eastmoney.com/api/qt/stock/fflow/kline/get?secid={secid}&klt=101&lmt=1&ut=bd1d9ddb04089700cf9c27f6f7426281&fields1=f1,f2,f3,f7&fields2=f51,f52,f53,f54,f55,f56,f57,f58,f59,f60,f61,f62,f63,f64,f65"
+            # 方案 A: 历史/最新日 K 资金流
+            flow_url = f"http://push2his.eastmoney.com/api/qt/stock/fflow/daykline/get?secid={secid}&klt=101&lmt=1&fields1=f1,f2,f3,f7&fields2=f51,f52,f53,f54,f55,f56,f57,f58,f59,f60,f61,f62,f63,f64,f65&ut=b2884a393a59ad64002292a3e90d46a5"
             flow_data = await asyncio.to_thread(_fetch_eastmoney_json, flow_url)
             klines = flow_data.get("data", {}).get("klines", [])
             if klines:
@@ -483,13 +709,34 @@ class GenericDataProvider(DataProvider):
                     quote_data["institution_net_inflow_formatted"] = format_amount(inst_flow)
                     return quote_data
         except Exception as e:
-            logger.warning(f"[GenericDataProvider] flow fetch error for {code}: {e}")
+            logger.warning(f"[GenericDataProvider] primary flow fetch error for {code}: {e}")
+
+        # 方案 B (回退): 东方财富实时盘中资金流接口
+        try:
+            rt_url = f"http://push2.eastmoney.com/api/qt/stock/get?secid={secid}&fields=f12,f14,f62,f66,f69,f72,f75,f78,f81,f84,f87"
+            rt_data = await asyncio.to_thread(_fetch_eastmoney_json, rt_url)
+            d = rt_data.get("data", {})
+            if d and ("f62" in d or "f84" in d):
+                main_flow = float(d.get("f62") or 0.0)
+                inst_flow = float(d.get("f66") or 0.0)
+                retail_flow = float(d.get("f84") or 0.0)
+
+                quote_data["main_net_inflow"] = main_flow
+                quote_data["main_net_inflow_formatted"] = format_amount(main_flow)
+                quote_data["retail_net_inflow"] = retail_flow
+                quote_data["retail_net_inflow_formatted"] = format_amount(retail_flow)
+                quote_data["institution_net_inflow"] = inst_flow
+                quote_data["institution_net_inflow_formatted"] = format_amount(inst_flow)
+                return quote_data
+        except Exception as e2:
+            logger.warning(f"[GenericDataProvider] fallback flow fetch error for {code}: {e2}")
 
         return quote_data
 
     async def _calculate_fund_flow_from_components(self, fund_code: str) -> dict:
         """
         当基金无法直接获取资金流向时，根据前十大重仓股的权重加权计算
+        使用并发请求与双接口容错，保证高可用
         """
         url = f"http://fundf10.eastmoney.com/FundArchivesDatas.aspx?type=jjcc&topline=10&code={fund_code}"
         try:
@@ -499,21 +746,17 @@ class GenericDataProvider(DataProvider):
             pattern = r"<td><a href=[\x27\x22]//quote\.eastmoney\.com/unify/r/[01]\.([0-9]{6})[\x27\x22]>\1</a></td><td class=[\x27\x22]tol[\x27\x22]><a[^>]*>([^<]+)</a></td>.*?<td class=[\x27\x22]tor[\x27\x22]>([0-9\.]+)%</td>"
             matches = re.findall(pattern, text)
             if not matches:
-                return {"available": False, "calc_from_components": False}
+                return {"available": False, "calc_from_components": False, "main_net_inflow_formatted": "-", "institution_net_inflow_formatted": "-", "retail_net_inflow_formatted": "-"}
 
-            total_weight = 0.0
-            weighted_main = 0.0
-            weighted_retail = 0.0
-            weighted_inst = 0.0
-            top_components = []
+            candidates = matches[:10]
 
-            for scode, sname, sweight in matches[:10]:
+            async def _fetch_comp_flow(scode: str, sname: str, sweight: str):
                 weight = float(sweight)
-                total_weight += weight
-                
                 m_prefix = "sh" if scode.startswith(("6", "5", "9")) else "sz"
                 secid = f"1.{scode}" if m_prefix == "sh" else f"0.{scode}"
-                flow_url = f"http://push2.eastmoney.com/api/qt/stock/fflow/kline/get?secid={secid}&klt=101&lmt=1&ut=bd1d9ddb04089700cf9c27f6f7426281&fields1=f1,f2,f3,f7&fields2=f51,f52,f53,f54,f55,f56"
+
+                # 优先 push2his
+                flow_url = f"http://push2his.eastmoney.com/api/qt/stock/fflow/daykline/get?secid={secid}&klt=101&lmt=1&fields1=f1,f2,f3,f7&fields2=f51,f52,f53,f54,f55,f56&ut=b2884a393a59ad64002292a3e90d46a5"
                 try:
                     c_resp = await asyncio.to_thread(_fetch_eastmoney_json, flow_url)
                     c_klines = c_resp.get("data", {}).get("klines", [])
@@ -522,19 +765,60 @@ class GenericDataProvider(DataProvider):
                         m_flow = float(p[1]) if len(p) > 1 and p[1] else 0.0
                         r_flow = float(p[2]) if len(p) > 2 and p[2] else 0.0
                         i_flow = float(p[5]) if len(p) > 5 and p[5] else 0.0
-
-                        weighted_main += m_flow * (weight / 100.0)
-                        weighted_retail += r_flow * (weight / 100.0)
-                        weighted_inst += i_flow * (weight / 100.0)
-
-                        top_components.append({
-                            "code": scode,
-                            "name": sname,
-                            "weight": weight,
-                            "main_net_inflow_formatted": format_amount(m_flow)
-                        })
+                        return {"scode": scode, "sname": sname, "weight": weight, "m_flow": m_flow, "r_flow": r_flow, "i_flow": i_flow}
                 except Exception:
                     pass
+
+                # 回退 push2
+                try:
+                    rt_url = f"http://push2.eastmoney.com/api/qt/stock/get?secid={secid}&fields=f12,f14,f62,f66,f84"
+                    c_resp2 = await asyncio.to_thread(_fetch_eastmoney_json, rt_url)
+                    d = c_resp2.get("data", {})
+                    if d:
+                        m_flow = float(d.get("f62") or 0.0)
+                        i_flow = float(d.get("f66") or 0.0)
+                        r_flow = float(d.get("f84") or 0.0)
+                        return {"scode": scode, "sname": sname, "weight": weight, "m_flow": m_flow, "r_flow": r_flow, "i_flow": i_flow}
+                except Exception:
+                    pass
+                return None
+
+            tasks = [_fetch_comp_flow(sc, sn, sw) for sc, sn, sw in candidates]
+            comp_results = await asyncio.gather(*tasks, return_exceptions=True)
+
+            total_weight = 0.0
+            weighted_main = 0.0
+            weighted_retail = 0.0
+            weighted_inst = 0.0
+            top_components = []
+
+            for res in comp_results:
+                if isinstance(res, dict) and res:
+                    w = res["weight"]
+                    m = res["m_flow"]
+                    r = res["r_flow"]
+                    i = res["i_flow"]
+                    total_weight += w
+                    weighted_main += m * (w / 100.0)
+                    weighted_retail += r * (w / 100.0)
+                    weighted_inst += i * (w / 100.0)
+                    top_components.append({
+                        "code": res["scode"],
+                        "name": res["sname"],
+                        "weight": w,
+                        "main_net_inflow_formatted": format_amount(m),
+                        "institution_net_inflow_formatted": format_amount(i),
+                        "retail_net_inflow_formatted": format_amount(r)
+                    })
+
+            if not top_components:
+                return {
+                    "available": False,
+                    "calc_from_components": False,
+                    "main_net_inflow_formatted": "-",
+                    "institution_net_inflow_formatted": "-",
+                    "retail_net_inflow_formatted": "-"
+                }
 
             return {
                 "available": True,
@@ -550,7 +834,7 @@ class GenericDataProvider(DataProvider):
             }
         except Exception as e:
             logger.warning(f"[GenericDataProvider] _calculate_fund_flow_from_components error for {fund_code}: {e}")
-            return {"available": False, "calc_from_components": False}
+            return {"available": False, "calc_from_components": False, "main_net_inflow_formatted": "-", "institution_net_inflow_formatted": "-", "retail_net_inflow_formatted": "-"}
 
     async def get_sector_rotation(self) -> list:
         """

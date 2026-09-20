@@ -1665,7 +1665,12 @@ const saveSettings = async () => {
 
     syncSelectionToSettings()
     await api.updateSettings(settings.value)
-    showToast('✅ 设置已保存')
+    // 联动重置本地数据分析缓存，确保切回数据分析页立即生效最新数据源
+    try {
+      localStorage.removeItem('lh_data_analysis_overview_v2')
+      localStorage.removeItem('lh_data_analysis_holdings_v2')
+    } catch (ignore) {}
+    showToast('✅ 设置已保存（数据分析已同步更新）')
   } catch (e) {
     showToast('❌ 保存失败，请重试')
   }

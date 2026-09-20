@@ -87,12 +87,12 @@
       </div>
     </section>
 
-    <!-- 2. 全市场主力 / 机构 / 散户 净成交量 -->
+    <!-- 2. 全市场机构 / 主力 / 散户 净成交量 -->
     <section class="section-block">
       <div class="section-header">
         <h3 class="section-title">
           <span class="title-icon">🌊</span>
-          <span>全市场资金流向 (散户 / 主力 / 机构)</span>
+          <span>全市场资金流向 (机构 / 主力 / 散户)</span>
         </h3>
         <span class="section-hint">红涨流入 / 绿跌流出</span>
       </div>
@@ -104,18 +104,6 @@
         </div>
 
         <div v-else class="flow-metrics-grid">
-          <!-- 主力净流入 -->
-          <div class="metric-card" :class="getFlowClass(overview.fund_flow.main_net_inflow)">
-            <div class="metric-header">
-              <span class="metric-icon">🚀</span>
-              <span class="metric-title">主力净成交额</span>
-            </div>
-            <div class="metric-value">
-              {{ overview.fund_flow.main_net_inflow_formatted }}
-            </div>
-            <div class="metric-desc">超大单 + 大单合计买卖净额</div>
-          </div>
-
           <!-- 机构净流入 -->
           <div class="metric-card" :class="getFlowClass(overview.fund_flow.institution_net_inflow)">
             <div class="metric-header">
@@ -126,6 +114,18 @@
               {{ overview.fund_flow.institution_net_inflow_formatted }}
             </div>
             <div class="metric-desc">超大单机构级资金净博弈</div>
+          </div>
+
+          <!-- 主力净流入 -->
+          <div class="metric-card" :class="getFlowClass(overview.fund_flow.main_net_inflow)">
+            <div class="metric-header">
+              <span class="metric-icon">🚀</span>
+              <span class="metric-title">主力净成交额</span>
+            </div>
+            <div class="metric-value">
+              {{ overview.fund_flow.main_net_inflow_formatted }}
+            </div>
+            <div class="metric-desc">超大单 + 大单合计买卖净额</div>
           </div>
 
           <!-- 散户净流入 -->
@@ -200,7 +200,7 @@
       </div>
 
       <!-- 面板卡片网格 -->
-      <div v-if="loadingHoldings" class="glass-card loading-box">
+      <div v-if="loadingHoldings && !displayedHoldingsAnalysis.length" class="glass-card loading-box">
         <span class="spinner">⏳</span>
         <span>正在加载持仓标的资金分析数据...</span>
       </div>
@@ -253,18 +253,18 @@
             <span>依据前 {{ item.components_count || 10 }} 大重仓成分股加权穿透测算</span>
           </div>
 
-          <!-- 资金流向三维条 -->
+          <!-- 资金流向三维条 (机构 / 主力 / 散户) -->
           <div class="holding-flow-list">
-            <div class="flow-row">
-              <span class="flow-name">主力净流入</span>
-              <span class="flow-val" :class="getFlowClass(item.main_net_inflow)">
-                {{ item.main_net_inflow_formatted }}
-              </span>
-            </div>
             <div class="flow-row">
               <span class="flow-name">机构净流入</span>
               <span class="flow-val" :class="getFlowClass(item.institution_net_inflow)">
                 {{ item.institution_net_inflow_formatted }}
+              </span>
+            </div>
+            <div class="flow-row">
+              <span class="flow-name">主力净流入</span>
+              <span class="flow-val" :class="getFlowClass(item.main_net_inflow)">
+                {{ item.main_net_inflow_formatted }}
               </span>
             </div>
             <div class="flow-row">
@@ -521,6 +521,66 @@ const holdingsList = ref([])
 const displayedHoldingsAnalysis = ref([])
 const manuallySelectedCodes = ref([])
 
+// 本地持久化缓存键与交易时间判定
+const STORAGE_KEY_HOLDINGS = 'lh_data_analysis_holdings_v2'
+const STORAGE_KEY_OVERVIEW = 'lh_data_analysis_overview_v2'
+
+const isMarketTradingTime = () => {
+  const now = new Date()
+  const day = now.getDay()
+  if (day === 0 || day === 6) return false
+  const hours = now.getHours()
+  const mins = now.getMinutes()
+  const timeNum = hours * 100 + mins
+  return timeNum >= 915 && timeNum <= 1505
+}
+
+const loadCacheFromStorage = () => {
+  try {
+    const cachedHoldings = localStorage.getItem(STORAGE_KEY_HOLDINGS)
+    if (cachedHoldings) {
+      const parsed = JSON.parse(cachedHoldings)
+      if (Array.isArray(parsed.displayedHoldingsAnalysis) && parsed.displayedHoldingsAnalysis.length > 0) {
+        displayedHoldingsAnalysis.value = parsed.displayedHoldingsAnalysis
+      }
+      if (Array.isArray(parsed.holdingsList) && parsed.holdingsList.length > 0) {
+        holdingsList.value = parsed.holdingsList
+      }
+      if (Array.isArray(parsed.manuallySelectedCodes) && parsed.manuallySelectedCodes.length > 0) {
+        manuallySelectedCodes.value = parsed.manuallySelectedCodes
+      }
+    }
+    const cachedOverview = localStorage.getItem(STORAGE_KEY_OVERVIEW)
+    if (cachedOverview) {
+      const parsedOv = JSON.parse(cachedOverview)
+      if (parsedOv && typeof parsedOv === 'object') {
+        Object.assign(overview, parsedOv)
+      }
+    }
+    return displayedHoldingsAnalysis.value.length > 0
+  } catch (e) {
+    console.warn('读取本地数据分析缓存失败:', e)
+  }
+  return false
+}
+
+const saveCacheToStorage = () => {
+  try {
+    localStorage.setItem(STORAGE_KEY_HOLDINGS, JSON.stringify({
+      displayedHoldingsAnalysis: displayedHoldingsAnalysis.value,
+      holdingsList: holdingsList.value,
+      manuallySelectedCodes: manuallySelectedCodes.value,
+      savedAt: Date.now()
+    }))
+    localStorage.setItem(STORAGE_KEY_OVERVIEW, JSON.stringify(overview))
+  } catch (e) {
+    console.warn('保存本地数据分析缓存失败:', e)
+  }
+}
+
+// 首次 setup 即时同步载入上次缓存数据，避免页面每次进入都出现加载闪烁
+loadCacheFromStorage()
+
 // 图表 DOM 与交互状态
 const flowChartRef = ref(null)
 let flowChart = null
@@ -600,7 +660,10 @@ const getFlowClass = (val) => {
 const loadOverview = async () => {
   try {
     const res = await api.getDataAnalysisOverview()
-    Object.assign(overview, res)
+    if (res) {
+      Object.assign(overview, res)
+      saveCacheToStorage()
+    }
   } catch (e) {
     console.error('加载概览失败:', e)
   }
@@ -636,8 +699,11 @@ const loadStatusConfig = async () => {
   }
 }
 
-const loadHoldingsAndAnalysis = async () => {
-  loadingHoldings.value = true
+const loadHoldingsAndAnalysis = async (isSilent = false) => {
+  // 仅在无任何缓存且非静默模式下才触发全屏阻塞 loading，避免每次进入都闪烁等待
+  if (!isSilent && !displayedHoldingsAnalysis.value.length) {
+    loadingHoldings.value = true
+  }
   try {
     const list = await api.getDataAnalysisHoldings()
     holdingsList.value = list || []
@@ -659,9 +725,13 @@ const loadHoldingsAndAnalysis = async () => {
         type: h.type
       }))
       const analysisData = await api.getHoldingsAnalysis(itemsToQuery)
-      displayedHoldingsAnalysis.value = analysisData || []
+      if (analysisData && analysisData.length) {
+        displayedHoldingsAnalysis.value = analysisData
+        saveCacheToStorage()
+      }
     } else {
       displayedHoldingsAnalysis.value = []
+      saveCacheToStorage()
     }
   } catch (e) {
     console.error('加载标的分析失败:', e)
@@ -686,6 +756,7 @@ const handleSelectHoldingToAdd = async () => {
     const res = await api.getDataAnalysisStock(code, target.type === 'fund')
     res.type = target.type
     displayedHoldingsAnalysis.value.unshift(res)
+    saveCacheToStorage()
     showToast(`✅ 已将【${target.name}】加入数据分析面板`)
   } catch (e) {
     showToast(`❌ 查询标的数据失败: ${e.message}`)
@@ -695,9 +766,10 @@ const handleSelectHoldingToAdd = async () => {
 const removeHoldingFromDisplay = (code) => {
   displayedHoldingsAnalysis.value = displayedHoldingsAnalysis.value.filter(d => d.code !== code)
   manuallySelectedCodes.value = manuallySelectedCodes.value.filter(c => c !== code)
+  saveCacheToStorage()
 }
 
-// 手动刷新
+// 手动刷新 (支持开盘前/收盘后及交易时间强制更新最新数据)
 const handleManualRefresh = async () => {
   refreshing.value = true
   try {
@@ -706,9 +778,10 @@ const handleManualRefresh = async () => {
       loadOverview(),
       loadSectorRotation(),
       loadSectorFlow(),
-      loadHoldingsAndAnalysis(),
+      loadHoldingsAndAnalysis(false),
       loadStatusConfig()
     ])
+    saveCacheToStorage()
     showToast('✅ 数据分析已刷新完成')
   } catch (e) {
     showToast(`❌ 刷新失败: ${e.message}`)
@@ -1064,12 +1137,21 @@ const handleResize = () => {
 
 onMounted(async () => {
   window.addEventListener('resize', handleResize)
+
+  // 1. 同步尝试从本地缓存恢复
+  const hasCache = loadCacheFromStorage()
+  const isTrading = isMarketTradingTime()
+
   await loadStatusConfig()
+
+  // 2. 无论是否交易时间：
+  // 若已有本地缓存，则已在同步阶段显示，避免任何白屏闪烁；
+  // 随后均在后台拉取全量最新数据（包括概览、板块以及个股/基金监控面板），静默平滑替换
   await Promise.all([
     loadOverview(),
     loadSectorRotation(),
     loadSectorFlow(),
-    loadHoldingsAndAnalysis()
+    loadHoldingsAndAnalysis(hasCache)
   ])
 })
 

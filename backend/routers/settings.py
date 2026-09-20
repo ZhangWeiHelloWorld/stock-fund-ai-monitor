@@ -15,6 +15,10 @@ def update_settings(settings: SettingsUpdate, current_user: dict = Depends(get_c
     updates = settings.model_dump(exclude_unset=True)
     if updates:
         update_settings_dict(current_user['id'], updates)
+        # 如果更新了数据源配置或分析相关参数，立即清除数据分析缓存
+        if any(k in updates for k in ('data_source_provider', 'mx_api_key', 'data_analysis_max_panels')):
+            from services.data_analysis_service import clear_user_analysis_cache
+            clear_user_analysis_cache(current_user['id'])
     return get_settings_dict(user_id=current_user['id'])
 
 @router.post("/test-push")
