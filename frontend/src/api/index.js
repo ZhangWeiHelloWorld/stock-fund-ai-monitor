@@ -64,11 +64,14 @@ export default {
   getDataAnalysisOverview: () => api.get('/data-analysis/overview').then(res => res.data),
   getDataAnalysisStock: (code, isFund = false) => api.get(`/data-analysis/stock/${code}?is_fund=${isFund}`).then(res => res.data),
   getDataAnalysisSectorRotation: () => api.get('/data-analysis/sector-rotation').then(res => res.data),
+  getDataAnalysisSectorRotationTimeline: (force = false) => api.get(`/data-analysis/sector-rotation-timeline${force ? '?force=true' : ''}`).then(res => res.data),
   getDataAnalysisSectorFlow: () => api.get('/data-analysis/sector-flow').then(res => res.data),
   getDataAnalysisHoldings: () => api.get('/data-analysis/holdings').then(res => res.data),
   getHoldingsAnalysis: (items) => api.post('/data-analysis/holdings-analysis', items).then(res => res.data),
   refreshDataAnalysis: () => api.post('/data-analysis/refresh').then(res => res.data),
   getDataAnalysisStatus: () => api.get('/data-analysis/status').then(res => res.data),
+  getDataAnalysisTechnical: (code, isFund = false, force = false) => api.get(`/data-analysis/technical/${code}?is_fund=${isFund}&force=${force}`).then(res => res.data),
+  generateDataAnalysisTechnicalAi: (payload) => api.post('/data-analysis/technical-ai', payload).then(res => res.data),
 
   // Settings
   getSettings: () => api.get('/settings').then(res => res.data),
